@@ -1,0 +1,18 @@
+{
+  "net_G": "coord_resnet50",
+  "ckptdir": "./checkpoints_G_coord_resnet50",
+  "input_mode": "seq",
+  "datadir": "temp_image_input_fc875134-ea1e-4b0f-8aa8-96bf2e6e1411",
+  "skybox": "bluesky2.jpg",
+  "in_size_w": 384,
+  "in_size_h": 384,
+  "out_size_w": 1024,
+  "out_size_h": 682,
+  "skybox_center_crop": 0.6,
+  "auto_light_matching": true,
+  "relighting_factor": 0.0,
+  "recoloring_factor": 0.1,
+  "halo_effect": true,
+  "output_dir": "outputs/fc875134-ea1e-4b0f-8aa8-96bf2e6e1411",
+  "save_jpgs": true
+}

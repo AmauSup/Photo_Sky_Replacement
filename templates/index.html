@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkyAR Demo - Dynamic Sky Replacement for Videos & Photos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+        .sky-template {
+            transition: all 0.3s ease;
+        }
+        .sky-template:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .sky-template.selected {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        .sky-template img {
+            transition: transform 0.3s ease;
+        }
+        .sky-template:hover img {
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex items-center justify-between">
+                <h1 class="text-3xl font-bold text-gray-900">
+                    🌌 SkyAR Demo
+                </h1>
+                <p class="text-gray-600">Dynamic Sky Replacement for Videos & Photos</p>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Introduction -->
+        <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
+            <h2 class="text-2xl font-semibold text-gray-900 mb-4">Welcome to SkyAR</h2>
+            <p class="text-gray-700 mb-4">
+                Upload a video or photo and watch as our AI automatically replaces the sky with dramatic, 
+                cinematic backgrounds. From floating castles to alien spacecraft, create stunning 
+                visual effects in seconds! <strong>Videos & Photos: 10MB max each</strong>
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
+                <div class="flex items-center">
+                    <span class="text-green-500 mr-2">✓</span>
+                    Automatic sky detection
+                </div>
+                <div class="flex items-center">
+                    <span class="text-green-500 mr-2">✓</span>
+                    Works with videos & photos
+                </div>
+                <div class="flex items-center">
+                    <span class="text-green-500 mr-2">✓</span>
+                    Multiple sky templates
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Section -->
+        <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
+            <h3 class="text-xl font-semibold text-gray-900 mb-4">1. Upload Your Video or Photo</h3>
+            
+            <div id="upload-area" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer">
+                <input type="file" id="video-input" accept="video/*,image/*" multiple class="hidden">
+                <div id="upload-placeholder">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <p class="mt-2 text-sm text-gray-600">
+                        <span class="font-medium text-blue-600 hover:text-blue-500 cursor-pointer">Click to upload</span>
+                        or drag and drop
+                    </p>
+                    <p class="text-xs text-gray-500">
+                        <strong>Videos:</strong> MP4, AVI, MOV up to 10MB<br>
+                        <strong>Photos:</strong> JPG, PNG, WebP up to 10MB<br>
+                        <strong>Batch:</strong> Up to 10 files at once (100MB total max)
+                    </p>
+                </div>
+                <div id="upload-success" class="hidden">
+                    <svg class="mx-auto h-12 w-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    <p class="mt-2 text-sm text-green-600 font-medium" id="upload-count"></p>
+                    <p class="text-xs text-gray-500" id="upload-size"></p>
+                    
+                    <!-- Files Preview Grid -->
+                    <div id="files-preview" class="mt-4 grid grid-cols-4 gap-2 max-h-64 overflow-y-auto">
+                        <!-- Individual file previews will be added here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sky Template Selection -->
+        <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
+            <button id="skybox-toggle" class="w-full flex items-center justify-between text-xl font-semibold text-gray-900 mb-4 hover:text-blue-600 transition-colors">
+                <span>2. Choose Your Sky (Optional)</span>
+                <svg id="skybox-arrow" class="w-5 h-5 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </button>
+            
+            <div id="skybox-content" class="hidden">
+                <div class="mb-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="randomize-skybox" checked class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                        <span class="ml-2 text-sm text-gray-700">Randomize skybox assignment (recommended for batch processing)</span>
+                    </label>
+                </div>
+                
+                <div id="manual-skybox-selection" class="hidden">
+                    <div class="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {% for template_id, template in sky_templates.items() %}
+                        <div class="sky-template border-2 border-gray-200 rounded-lg p-3 cursor-pointer hover:shadow-md transition-all" data-template="{{ template_id }}">
+                            <div class="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden">
+                                <img src="/api/skybox/{{ template.file }}" 
+                                 alt="{{ template.name }}" 
+                                 class="w-full h-full object-cover"
+                                 onerror="this.parentElement.innerHTML=\'<div class=\\'w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-400 to-purple-600\\'><span class=\\'text-white text-2xl\\'>☁️</span></div>\'"'>
+                            </div>
+                            <h4 class="font-medium text-gray-900 text-sm text-center">{{ template.name }}</h4>
+                            <p class="text-xs text-gray-500 text-center mt-1">{{ template.description }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Advanced Settings -->
+        <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
+            <button id="advanced-toggle" class="w-full flex items-center justify-between text-xl font-semibold text-gray-900 mb-4 hover:text-blue-600 transition-colors">
+                <span>3. Advanced Settings (Optional)</span>
+                <svg id="advanced-arrow" class="w-5 h-5 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </button>
+            
+            <div id="advanced-content" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Relighting Factor
+                        </label>
+                        <input type="range" id="relighting-factor" min="0" max="1" step="0.1" value="0" 
+                               class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                        <div class="flex justify-between text-xs text-gray-500 mt-1">
+                            <span>Natural</span>
+                            <span id="relighting-value">0</span>
+                            <span>Dramatic</span>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Color Matching
+                        </label>
+                        <input type="range" id="recoloring-factor" min="0" max="1" step="0.1" value="0.1"
+                               class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                        <div class="flex justify-between text-xs text-gray-500 mt-1">
+                            <span>Original</span>
+                            <span id="recoloring-value">0.1</span>
+                            <span>Matched</span>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center">
+                        <input type="checkbox" id="auto-light" checked class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                        <label for="auto-light" class="ml-2 text-sm text-gray-700">Auto Light Matching</label>
+                    </div>
+                    
+                    <div class="flex items-center">
+                        <input type="checkbox" id="halo-effect" unchecked class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                        <label for="halo-effect" class="ml-2 text-sm text-gray-700">Halo Effect</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Process Button -->
+        <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
+            <h3 class="text-xl font-semibold text-gray-900 mb-4">4. Start Processing</h3>
+            
+            <button id="process-btn" disabled 
+                    class="w-full bg-blue-600 text-white px-6 py-3 rounded-lg font-medium disabled:bg-gray-400 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors">
+                Select Files to Start Batch Processing
+            </button>
+        </div>
+
+        <!-- Batch Progress Section -->
+        <div id="batch-progress-section" class="bg-white rounded-lg shadow-sm p-6 mb-8 hidden">
+            <h3 class="text-xl font-semibold text-gray-900 mb-4">Batch Processing Status</h3>
+            
+            <div class="mb-4">
+                <div class="flex justify-between text-sm text-gray-600 mb-2">
+                    <span>Overall Progress</span>
+                    <span id="batch-progress-text">0/0 completed</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-3">
+                    <div id="batch-progress-bar" class="progress-bar bg-blue-600 h-3 rounded-full" style="width: 0%"></div>
+                </div>
+            </div>
+            
+            <div id="batch-files-status" class="space-y-2 max-h-64 overflow-y-auto">
+                <!-- Individual file status will be shown here -->
+            </div>
+        </div>
+    </main>
+
+    <!-- Results Carousel -->
+    <div id="results-carousel" class="bg-white border-t mt-16 hidden">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <h3 class="text-2xl font-bold text-gray-900 mb-6">Processed Results</h3>
+            <div class="overflow-x-auto">
+                <div id="carousel-container" class="flex space-x-4 pb-4">
+                    <!-- Result thumbnails will be added here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Result Modal -->
+    <div id="result-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg max-w-4xl max-h-full overflow-auto">
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900">Processed Result</h3>
+                    <button id="modal-close" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="text-center">
+                    <img id="modal-image" src="" alt="Full size result" class="max-w-full h-auto rounded-lg shadow-lg">
+                    <div class="mt-4">
+                        <button id="modal-download-btn" 
+                                class="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition-colors">
+                            Download Full Resolution
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error/Message Area -->
+    <div id="message-area" class="fixed bottom-4 left-4 right-4 z-50 hidden">
+        <div id="message-content" class="max-w-md mx-auto bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center justify-between">
+            <div class="flex items-center">
+                <svg id="message-icon" class="h-6 w-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <!-- Error icon -->
+                    <path id="error-icon" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    <!-- Success icon -->
+                    <path id="success-icon" class="hidden" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    <!-- Info icon -->
+                    <path id="info-icon" class="hidden" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span id="message-text">Error message will appear here</span>
+            </div>
+            <button id="message-close" class="ml-4 text-white hover:text-gray-200">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t mt-16">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div class="text-center text-gray-600">
+                <p>SkyAR Demo - Based on "Castle in the Sky: Dynamic Sky Replacement and Harmonization in Videos"</p>
+                <p class="text-sm mt-2">Research paper by Zhengxia Zou</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Global variables
+        let uploadedFiles = [];
+        let selectedSkyTemplate = null;
+        let currentBatchId = null;
+        let batchPollingInterval = null;
+        let completedResults = [];
+
+        // Debug: Log the current URL info
+        console.log('Current URL:', window.location.href);
+        console.log('Pathname:', window.location.pathname);
+        
+        // Get the correct base URL for API calls
+        // For the proxy URL format, we need to use the current path
+        let baseUrl = '';
+        if (window.location.pathname.includes('/proxy/8001/')) {
+            baseUrl = '/proxy/8001/';
+        } else {
+            baseUrl = '/';
+        }
+        
+        console.log('Using baseUrl:', baseUrl);
+
+        // DOM elements
+        const uploadArea = document.getElementById('upload-area');
+        const videoInput = document.getElementById('video-input');
+        const uploadPlaceholder = document.getElementById('upload-placeholder');
+        const uploadSuccess = document.getElementById('upload-success');
+        const processBtn = document.getElementById('process-btn');
+        const skyTemplates = document.querySelectorAll('.sky-template');
+        
+        // Range inputs
+        const relightingFactor = document.getElementById('relighting-factor');
+        const relightingValue = document.getElementById('relighting-value');
+        const recoloringFactor = document.getElementById('recoloring-factor');
+        const recoloringValue = document.getElementById('recoloring-value');
+
+        // Advanced settings toggle
+        const advancedToggle = document.getElementById('advanced-toggle');
+        const advancedContent = document.getElementById('advanced-content');
+        const advancedArrow = document.getElementById('advanced-arrow');
+
+        // Skybox toggle
+        const skyboxToggle = document.getElementById('skybox-toggle');
+        const skyboxContent = document.getElementById('skybox-content');
+        const skyboxArrow = document.getElementById('skybox-arrow');
+        const randomizeSkybox = document.getElementById('randomize-skybox');
+        const manualSkyboxSelection = document.getElementById('manual-skybox-selection');
+
+        // Batch processing elements
+        const batchProgressSection = document.getElementById('batch-progress-section');
+        const batchProgressBar = document.getElementById('batch-progress-bar');
+        const batchProgressText = document.getElementById('batch-progress-text');
+        const batchFilesStatus = document.getElementById('batch-files-status');
+
+        // Modal elements
+        const resultModal = document.getElementById('result-modal');
+        const modalClose = document.getElementById('modal-close');
+        const modalImage = document.getElementById('modal-image');
+        const modalDownloadBtn = document.getElementById('modal-download-btn');
+
+        // Results carousel
+        const resultsCarousel = document.getElementById('results-carousel');
+        const carouselContainer = document.getElementById('carousel-container');
+
+        // Upload area click handler
+        uploadArea.addEventListener('click', () => {
+            videoInput.click();
+        });
+
+        // File input change handler
+        videoInput.addEventListener('change', handleFileUpload);
+
+        // Sky template selection
+        skyTemplates.forEach(template => {
+            template.addEventListener('click', () => {
+                skyTemplates.forEach(t => t.classList.remove('selected'));
+                template.classList.add('selected');
+                selectedSkyTemplate = template.dataset.template;
+                updateProcessButton();
+            });
+        });
+
+        // Range input handlers
+        relightingFactor.addEventListener('input', (e) => {
+            relightingValue.textContent = e.target.value;
+        });
+
+        recoloringFactor.addEventListener('input', (e) => {
+            recoloringValue.textContent = e.target.value;
+        });
+
+        // Process button handler
+        processBtn.addEventListener('click', startProcessing);
+
+        // Advanced settings toggle
+        advancedToggle.addEventListener('click', () => {
+            const isHidden = advancedContent.classList.contains('hidden');
+            if (isHidden) {
+                advancedContent.classList.remove('hidden');
+                advancedArrow.style.transform = 'rotate(180deg)';
+            } else {
+                advancedContent.classList.add('hidden');
+                advancedArrow.style.transform = 'rotate(0deg)';
+            }
+        });
+
+        // Skybox toggle
+        skyboxToggle.addEventListener('click', () => {
+            const isHidden = skyboxContent.classList.contains('hidden');
+            if (isHidden) {
+                skyboxContent.classList.remove('hidden');
+                skyboxArrow.style.transform = 'rotate(180deg)';
+            } else {
+                skyboxContent.classList.add('hidden');
+                skyboxArrow.style.transform = 'rotate(0deg)';
+            }
+        });
+
+        // Randomize skybox checkbox handler
+        randomizeSkybox.addEventListener('change', () => {
+            if (randomizeSkybox.checked) {
+                manualSkyboxSelection.classList.add('hidden');
+            } else {
+                manualSkyboxSelection.classList.remove('hidden');
+            }
+        });
+
+        // Modal handlers
+        modalClose.addEventListener('click', closeModal);
+        resultModal.addEventListener('click', (e) => {
+            if (e.target === resultModal) closeModal();
+        });
+
+        // Modal download button
+        modalDownloadBtn.addEventListener('click', () => {
+            if (uploadedFiles.length === 1) {
+                window.location.href = baseUrl + `api/download/${uploadedFiles[0].video_id}`;
+            }
+        });
+
+        async function handleFileUpload(event) {
+            const files = Array.from(event.target.files);
+            console.log('=== UPLOAD DEBUG START ===');
+            console.log('Total files selected:', files.length);
+            
+            if (!files.length) {
+                console.log('No files selected');
+                return;
+            }
+
+            if (files.length > 10) {
+                console.log('Too many files:', files.length);
+                showMessage('Maximum 10 files allowed per upload', 'error');
+                event.target.value = '';
+                return;
+            }
+
+            const validFiles = [];
+            let totalSize = 0;
+
+            for (const file of files) {
+                console.log(`\n--- Processing file: ${file.name} ---`);
+                console.log('File object:', file);
+                console.log('File size:', file.size, 'bytes');
+                console.log('File type (MIME):', file.type);
+                
+                // Determine file type
+                const fileName = file.name.toLowerCase();
+                console.log('Filename (lowercase):', fileName);
+                
+                const videoExtensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv'];
+                const imageExtensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp', '.heic', '.heif'];
+                
+                const isVideo = videoExtensions.some(ext => {
+                    const matches = fileName.endsWith(ext);
+                    console.log(`Checking video extension ${ext}:`, matches);
+                    return matches;
+                });
+                
+                const isImage = imageExtensions.some(ext => {
+                    const matches = fileName.endsWith(ext);
+                    console.log(`Checking image extension ${ext}:`, matches);
+                    return matches;
+                });
+                
+                console.log(`Final determination - isVideo: ${isVideo}, isImage: ${isImage}`);
+                
+                if (!isVideo && !isImage) {
+                    console.log(`❌ REJECTED: ${file.name} - unsupported format`);
+                    showMessage(`Skipping ${file.name}: unsupported format`, 'error');
+                    continue;
+                }
+                
+                const fileType = isVideo ? 'video' : 'image';
+                const maxSize = 10 * 1024 * 1024; // 10MB for both
+                
+                console.log(`File type determined: ${fileType}`);
+                console.log(`Size check: ${file.size} <= ${maxSize} ?`, file.size <= maxSize);
+
+                if (file.size > maxSize) {
+                    console.log(`❌ REJECTED: ${file.name} - file too large`);
+                    showMessage(`Skipping ${file.name}: file too large (max 10MB)`, 'error');
+                    continue;
+                }
+
+                console.log(`✅ ACCEPTED: ${file.name}`);
+                validFiles.push(file);
+                totalSize += file.size;
+            }
+
+            console.log('\n=== VALIDATION SUMMARY ===');
+            console.log('Valid files:', validFiles.length);
+            console.log('Total size:', totalSize);
+            console.log('Valid files list:', validFiles.map(f => f.name));
+
+            if (validFiles.length === 0) {
+                console.log('❌ NO VALID FILES - Showing error');
+                showMessage('No valid files to upload', 'error');
+                event.target.value = '';
+                return;
+            }
+
+            // Continue with upload logic...
+            console.log('✅ Proceeding with upload');
+            console.log('=== UPLOAD DEBUG END ===');
+            
+            // Rest of the upload logic remains the same...
+
+            // Check total batch size (max 100MB total since individual files can be 10MB)
+            if (totalSize > 100 * 1024 * 1024) {
+                showMessage(`Total batch size too large (${formatFileSize(totalSize)}). Maximum 100MB total for all files.`, 'error');
+                event.target.value = '';
+                return;
+            }
+
+            // Limit number of files for proxy compatibility
+            if (validFiles.length > 10) {
+                showMessage(`Too many files (${validFiles.length}). Maximum 10 files per batch.`, 'error');
+                event.target.value = '';
+                return;
+            }
+
+            // Create FormData with files
+            const formData = new FormData();
+            
+            let uploadUrl;
+            if (validFiles.length === 1) {
+                // Single file upload
+                formData.append('file', validFiles[0]);
+                uploadUrl = baseUrl + 'api/upload-single';
+            } else {
+                // Multiple files upload
+                validFiles.forEach(file => {
+                    formData.append('files', file);
+                });
+                uploadUrl = baseUrl + 'api/upload';
+            }
+
+            try {
+                processBtn.textContent = 'Uploading...';
+                processBtn.disabled = true;
+
+                console.log('Uploading to:', uploadUrl, 'Files:', validFiles.length);
+
+                const response = await fetch(uploadUrl, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+                
+                const responseText = await response.text();
+                console.log('Response text length:', responseText.length);
+                console.log('Response text preview:', responseText.substring(0, 200));
+                
+                let result;
+                try {
+                    result = JSON.parse(responseText);
+                } catch (parseError) {
+                    console.error('JSON parse error:', parseError);
+                    console.error('Full response was:', responseText);
+                    
+                    // Better error handling for different response types
+                    if (responseText.includes('413') || responseText.includes('Request Entity Too Large')) {
+                        throw new Error('Files too large for server. Please use smaller files.');
+                    } else if (responseText.includes('<html>') || responseText.includes('<!DOCTYPE')) {
+                        throw new Error('Server returned HTML instead of JSON. Please check server status.');
+                    } else if (responseText.trim() === '') {
+                        throw new Error('Server returned empty response. Please try again.');
+                    } else {
+                        throw new Error(`Server returned invalid response: ${responseText.substring(0, 100)}...`);
+                    }
+                }
+                
+                if (result.success && result.files && result.files.length > 0) {
+                    uploadedFiles = result.files;
+                    
+                    // Update UI
+                    uploadPlaceholder.classList.add('hidden');
+                    uploadSuccess.classList.remove('hidden');
+                    document.getElementById('upload-count').textContent = `${result.count} files uploaded successfully`;
+                    document.getElementById('upload-size').textContent = formatFileSize(totalSize);
+                    
+                    // Show files preview
+                    showFilesPreview(validFiles);
+                    
+                    updateProcessButton();
+                    showMessage(`${result.count} files uploaded successfully!`, 'success');
+                } else {
+                    throw new Error(result.error || 'Upload failed - no files processed');
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                showMessage('Upload failed: ' + error.message, 'error');
+                processBtn.textContent = 'Upload Files';
+                processBtn.disabled = false;
+                event.target.value = '';
+            }
+        }
+
+        function updateProcessButton() {
+            if (uploadedFiles.length > 0) {
+                processBtn.disabled = false;
+                processBtn.textContent = `Start Batch Processing (${uploadedFiles.length} files)`;
+            } else {
+                processBtn.disabled = true;
+                processBtn.textContent = 'Select Files to Start Batch Processing';
+            }
+        }
+
+        function showFilesPreview(files) {
+            const filesPreview = document.getElementById('files-preview');
+            filesPreview.innerHTML = '';
+            
+            files.slice(0, 12).forEach((file, index) => { // Show max 12 previews
+                const fileDiv = document.createElement('div');
+                fileDiv.className = 'relative bg-gray-100 rounded-lg overflow-hidden aspect-square';
+                
+                if (file.type.startsWith('image/')) {
+                    const img = document.createElement('img');
+                    img.className = 'w-full h-full object-cover';
+                    img.onload = () => URL.revokeObjectURL(img.src);
+                    img.src = URL.createObjectURL(file);
+                    fileDiv.appendChild(img);
+                } else {
+                    fileDiv.innerHTML = `
+                        <div class="w-full h-full flex items-center justify-center">
+                            <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                            </svg>
+                        </div>
+                    `;
+                }
+                
+                // Add filename overlay
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 truncate';
+                nameDiv.textContent = file.name;
+                fileDiv.appendChild(nameDiv);
+                
+                filesPreview.appendChild(fileDiv);
+            });
+            
+            if (files.length > 12) {
+                const moreDiv = document.createElement('div');
+                moreDiv.className = 'flex items-center justify-center bg-gray-200 rounded-lg aspect-square text-gray-600 text-sm';
+                moreDiv.textContent = `+${files.length - 12} more`;
+                filesPreview.appendChild(moreDiv);
+            }
+        }
+
+        async function startProcessing() {
+            if (!currentVideoId || !selectedSkyTemplate) return;
+
+            const requestData = {
+                video_id: currentVideoId,
+                sky_template: selectedSkyTemplate,
+                auto_light_matching: document.getElementById('auto-light').checked,
+                relighting_factor: parseFloat(relightingFactor.value),
+                recoloring_factor: parseFloat(recoloringFactor.value),
+                halo_effect: document.getElementById('halo-effect').checked
+            };
+
+            try {
+                const response = await fetch(baseUrl + 'api/process', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    progressSection.classList.remove('hidden');
+                    processBtn.disabled = true;
+                    processBtn.textContent = 'Processing...';
+                    
+                    // Start polling for progress
+                    startProgressPolling();
+                } else {
+                    showMessage('Processing failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showMessage('Processing failed: ' + error.message, 'error');
+            }
+        }
+
+        async function startProcessing() {
+            if (uploadedFiles.length === 0) return;
+
+            try {
+                const formData = new FormData();
+                
+                // Add all video IDs
+                uploadedFiles.forEach(file => {
+                    formData.append('video_ids', file.video_id);
+                });
+                
+                // Add settings
+                formData.append('randomize_skybox', randomizeSkybox.checked);
+                if (!randomizeSkybox.checked && selectedSkyTemplate) {
+                    formData.append('sky_template', selectedSkyTemplate);
+                }
+                formData.append('auto_light_matching', document.getElementById('auto-light').checked);
+                formData.append('relighting_factor', parseFloat(relightingFactor.value));
+                formData.append('recoloring_factor', parseFloat(recoloringFactor.value));
+                formData.append('halo_effect', document.getElementById('halo-effect').checked);
+
+                const response = await fetch(baseUrl + 'api/process-batch', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentBatchId = result.batch_id;
+                    batchProgressSection.classList.remove('hidden');
+                    processBtn.disabled = true;
+                    processBtn.textContent = 'Processing...';
+                    
+                    // Start polling for batch progress
+                    startBatchProgressPolling();
+                    showMessage(`Batch processing started for ${result.jobs.length} files`, 'success');
+                } else {
+                    showMessage('Processing failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showMessage('Processing failed: ' + error.message, 'error');
+            }
+        }
+
+        function startBatchProgressPolling() {
+            batchPollingInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(baseUrl + `api/batch-status/${currentBatchId}`);
+                    const status = await response.json();
+                    
+                    updateBatchProgress(status);
+                    
+                    if (status.completed === status.total_files) {
+                        clearInterval(batchPollingInterval);
+                        showBatchCompleted(status);
+                    }
+                } catch (error) {
+                    console.error('Error polling batch status:', error);
+                }
+            }, 3000);
+        }
+
+        function updateBatchProgress(status) {
+            const progressPercent = Math.round((status.completed / status.total_files) * 100);
+            batchProgressBar.style.width = progressPercent + '%';
+            batchProgressText.textContent = `${status.completed}/${status.total_files} completed`;
+            
+            // Update individual file status
+            batchFilesStatus.innerHTML = '';
+            for (const [videoId, fileStatus] of Object.entries(status.files)) {
+                const fileDiv = document.createElement('div');
+                fileDiv.className = 'flex items-center justify-between p-2 bg-gray-50 rounded';
+                
+                let statusIcon = '⏳';
+                let statusColor = 'text-yellow-600';
+                if (fileStatus.status === 'completed') {
+                    statusIcon = '✅';
+                    statusColor = 'text-green-600';
+                } else if (fileStatus.status === 'error') {
+                    statusIcon = '❌';
+                    statusColor = 'text-red-600';
+                }
+                
+                fileDiv.innerHTML = `
+                    <span class="text-sm truncate flex-1">${fileStatus.filename}</span>
+                    <span class="${statusColor} text-sm">${statusIcon} ${fileStatus.message}</span>
+                `;
+                batchFilesStatus.appendChild(fileDiv);
+                
+                // Add to completed results if finished
+                if (fileStatus.status === 'completed' && !completedResults.find(r => r.video_id === videoId)) {
+                    completedResults.push({
+                        video_id: videoId,
+                        filename: fileStatus.filename,
+                        skybox: fileStatus.selected_skybox
+                    });
+                    updateResultsCarousel();
+                }
+            }
+        }
+
+        function showBatchCompleted(status) {
+            showMessage(`Batch processing completed! ${status.completed} files processed successfully.`, 'success');
+            processBtn.disabled = false;
+            processBtn.textContent = 'Process New Batch';
+        }
+
+        function updateResultsCarousel() {
+            if (completedResults.length === 0) {
+                resultsCarousel.classList.add('hidden');
+                return;
+            }
+            
+            resultsCarousel.classList.remove('hidden');
+            carouselContainer.innerHTML = '';
+            
+            completedResults.forEach(result => {
+                const resultDiv = document.createElement('div');
+                resultDiv.className = 'flex-shrink-0 w-48 cursor-pointer hover:opacity-80 transition-opacity';
+                
+                const downloadUrl = baseUrl + `api/download/${result.video_id}`;
+                
+                resultDiv.innerHTML = `
+                    <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+                        <div class="aspect-square bg-gray-100">
+                            <img src="${downloadUrl}" alt="${result.filename}" 
+                                 class="w-full h-full object-cover"
+                                 onerror="this.parentElement.innerHTML='<div class=\\'w-full h-full flex items-center justify-center\\'>📁</div>'">
+                        </div>
+                        <div class="p-3">
+                            <p class="text-sm font-medium truncate">${result.filename}</p>
+                            <p class="text-xs text-gray-500">${result.skybox || 'Random sky'}</p>
+                        </div>
+                    </div>
+                `;
+                
+                resultDiv.addEventListener('click', () => {
+                    openModalForResult(result);
+                });
+                
+                carouselContainer.appendChild(resultDiv);
+            });
+        }
+
+        function openModalForResult(result) {
+            const modalImg = document.getElementById('modal-image');
+            const downloadUrl = baseUrl + `api/download/${result.video_id}`;
+            modalImg.src = downloadUrl;
+            
+            // Update modal download button
+            modalDownloadBtn.onclick = () => {
+                window.location.href = downloadUrl;
+            };
+            
+            resultModal.classList.remove('hidden');
+        }
+
+        function closeModal() {
+            resultModal.classList.add('hidden');
+        }
+
+        // Message system functions
+        function showMessage(message, type = 'error', duration = 5000) {
+            const messageArea = document.getElementById('message-area');
+            const messageContent = document.getElementById('message-content');
+            const messageText = document.getElementById('message-text');
+            const errorIcon = document.getElementById('error-icon');
+            const successIcon = document.getElementById('success-icon');
+            const infoIcon = document.getElementById('info-icon');
+            
+            // Hide all icons first
+            errorIcon.classList.add('hidden');
+            successIcon.classList.add('hidden');
+            infoIcon.classList.add('hidden');
+            
+            // Set message and styling based on type
+            messageText.textContent = message;
+            
+            if (type === 'success') {
+                messageContent.className = 'max-w-md mx-auto bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center justify-between';
+                successIcon.classList.remove('hidden');
+            } else if (type === 'info') {
+                messageContent.className = 'max-w-md mx-auto bg-blue-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center justify-between';
+                infoIcon.classList.remove('hidden');
+            } else {
+                messageContent.className = 'max-w-md mx-auto bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center justify-between';
+                errorIcon.classList.remove('hidden');
+            }
+            
+            // Show the message
+            messageArea.classList.remove('hidden');
+            
+            // Auto-hide after duration
+            if (duration > 0) {
+                setTimeout(() => {
+                    hideMessage();
+                }, duration);
+            }
+        }
+        
+        function hideMessage() {
+            const messageArea = document.getElementById('message-area');
+            messageArea.classList.add('hidden');
+        }
+        
+        // Add click handler for close button
+        document.getElementById('message-close').addEventListener('click', hideMessage);
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Skybox - SkyAR Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-2xl mx-auto px-4 py-8">
+        <div class="bg-white rounded-lg shadow-sm p-6">
+            <h1 class="text-2xl font-bold text-gray-900 mb-6">Upload New Skybox Images</h1>
+            
+            <div class="space-y-6">
+                <!-- BlueSkY 1 -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <h3 class="font-medium text-gray-900 mb-3">Blue Sky 1 - Nuages dispersés</h3>
+                    <form id="form-bluesky1" class="space-y-3">
+                        <input type="file" id="file-bluesky1" accept="image/*" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Upload BlueSkY 1</button>
+                        <div id="status-bluesky1" class="text-sm"></div>
+                    </form>
+                </div>
+
+                <!-- BlueSkY 2 -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <h3 class="font-medium text-gray-900 mb-3">Blue Sky 2 - Ciel plus clair</h3>
+                    <form id="form-bluesky2" class="space-y-3">
+                        <input type="file" id="file-bluesky2" accept="image/*" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Upload BlueSkY 2</button>
+                        <div id="status-bluesky2" class="text-sm"></div>
+                    </form>
+                </div>
+
+                <!-- BlueSkY 3 -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <h3 class="font-medium text-gray-900 mb-3">Blue Sky 3 - Nuages légers</h3>
+                    <form id="form-bluesky3" class="space-y-3">
+                        <input type="file" id="file-bluesky3" accept="image/*" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Upload BlueSkY 3</button>
+                        <div id="status-bluesky3" class="text-sm"></div>
+                    </form>
+                </div>
+
+                <!-- BlueSkY 4 -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <h3 class="font-medium text-gray-900 mb-3">Blue Sky 4 - Gradient net</h3>
+                    <form id="form-bluesky4" class="space-y-3">
+                        <input type="file" id="file-bluesky4" accept="image/*" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Upload BlueSkY 4</button>
+                        <div id="status-bluesky4" class="text-sm"></div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="mt-8 text-center">
+                <a href="/proxy/8001/" class="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700">Retour au Demo</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get the base URL
+        const baseUrl = window.location.pathname.includes('/proxy/8001/') ? '/proxy/8001/' : '/';
+
+        // Handle form submissions
+        ['bluesky1', 'bluesky2', 'bluesky3', 'bluesky4'].forEach(skyboxName => {
+            const form = document.getElementById(`form-${skyboxName}`);
+            const fileInput = document.getElementById(`file-${skyboxName}`);
+            const status = document.getElementById(`status-${skyboxName}`);
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const file = fileInput.files[0];
+                if (!file) {
+                    status.innerHTML = '<span class="text-red-600">Veuillez sélectionner un fichier</span>';
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('skybox_name', skyboxName);
+
+                try {
+                    status.innerHTML = '<span class="text-blue-600">Upload en cours...</span>';
+                    
+                    const response = await fetch(baseUrl + 'api/upload-skybox', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        status.innerHTML = '<span class="text-green-600">✅ Upload réussi!</span>';
+                        fileInput.value = ''; // Clear the input
+                    } else {
+                        status.innerHTML = `<span class="text-red-600">❌ Erreur: ${result.error}</span>`;
+                    }
+                } catch (error) {
+                    status.innerHTML = `<span class="text-red-600">❌ Erreur: ${error.message}</span>`;
+                }
+            });
+        });
+    </script>
+</body>
+</html>

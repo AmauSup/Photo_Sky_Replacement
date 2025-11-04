@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SkyAR Upload Test</title>
+</head>
+<body>
+    <h1>SkyAR Upload Test</h1>
+    <form action="/api/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" accept="video/*" required>
+        <br><br>
+        <button type="submit">Upload Video</button>
+    </form>
+    
+    <hr>
+    <h2>API Test Links:</h2>
+    <ul>
+        <li><a href="/health">Health Check</a></li>
+        <li><a href="/api/templates">Sky Templates</a></li>
+    </ul>
+</body>
+</html>
