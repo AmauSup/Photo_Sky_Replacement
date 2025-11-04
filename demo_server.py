@@ -70,10 +70,15 @@ app.add_middleware(
 )
 
 # Create directories for uploads and outputs (local paths)
-UPLOAD_DIR = Path("./uploads")
-OUTPUT_DIR = Path("./outputs")
-UPLOAD_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(exist_ok=True)
+# === Chemins absolus ===
+UPLOAD_DIR = BASE_DIR / "uploads"
+OUTPUT_DIR = BASE_DIR / "outputs"
+TEMP_ZIPS_DIR = BASE_DIR / "temp_zips"
+STATUS_FILE = BASE_DIR / "skyar_processing_status.pkl"
+
+# Crée les dossiers si absents
+for d in [UPLOAD_DIR, OUTPUT_DIR, TEMP_ZIPS_DIR]:
+    d.mkdir(exist_ok=True)
 
 # Mount static files and templates
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
