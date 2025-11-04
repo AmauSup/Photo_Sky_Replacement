@@ -824,7 +824,6 @@ async def run_skyar_processing(video_id: str, request: ProcessingRequest):
                     out_width = int(max_4k_height * aspect_ratio)
                 print(f"Scaling from {orig_width}x{orig_height} to {out_width}x{out_height}")
 
-            # S'assurer que les dimensions sont paires
             out_width -= out_width % 2
             out_height -= out_height % 2
 
@@ -835,7 +834,7 @@ async def run_skyar_processing(video_id: str, request: ProcessingRequest):
         else:  # VIDÉO
             input_mode = "video"
             datadir = str(input_path.resolve())
-            out_width, out_height = 640, 360  # résolution réduite pour vitesse
+            out_width, out_height = 640, 360  # Résolution réduite pour vitesse
 
         # ========== Configuration du traitement ==========
         if file_type == "image":
@@ -913,7 +912,7 @@ async def run_skyar_processing(video_id: str, request: ProcessingRequest):
             error_message = stderr.decode("utf-8", errors="replace")
             raise Exception(f"SkyAR failed: {error_message}")
 
-        # Sortie
+        # Sortie finale
         if file_type == "image":
             import glob
             candidates = list(output_dir.glob("*syneth.jpg"))
@@ -923,7 +922,6 @@ async def run_skyar_processing(video_id: str, request: ProcessingRequest):
                 raise Exception("No output image found.")
             final_output = output_dir / "result.jpg"
             shutil.copy2(candidates[0], final_output)
-
         else:  # vidéo
             demo_path = Path("./demo.mp4")
             if not demo_path.exists():
@@ -931,7 +929,7 @@ async def run_skyar_processing(video_id: str, request: ProcessingRequest):
             final_output = output_dir / "result.mp4"
             shutil.move(demo_path, final_output)
 
-        # ========== Mise à jour du statut ==========
+        # ✅ Mise à jour du statut
         processing_status[video_id].update({
             "status": "completed",
             "progress": 100,
@@ -940,14 +938,26 @@ async def run_skyar_processing(video_id: str, request: ProcessingRequest):
         })
         save_processing_status()
 
-        # Nettoyage temporaire
+        # ✅ Création automatique du ZIP
+        try:
+            zip_dir = Path("./temp_zips")
+            zip_dir.mkdir(exist_ok=True)
+            zip_path = zip_dir / f"{video_id}.zip"
+            shutil.make_archive(str(zip_path.with_suffix("")), "zip", output_dir)
+            processing_status[video_id]["zip_path"] = str(zip_path)
+            save_processing_status()
+            print(f"📦 ZIP créé pour {video_id} → {zip_path}")
+        except Exception as e:
+            print(f"⚠️ Erreur lors de la création du ZIP pour {video_id}: {e}")
+
+        # ✅ Nettoyage temporaire
         if file_type == "image" and "input_dir" in locals():
-            import shutil
             shutil.rmtree(input_dir, ignore_errors=True)
 
         print(f"✅ Processing completed for {video_id}: {final_output}")
 
     except Exception as e:
+        # ❌ En cas d’erreur
         processing_status[video_id].update({
             "status": "error",
             "progress": 0,
@@ -955,6 +965,8 @@ async def run_skyar_processing(video_id: str, request: ProcessingRequest):
         })
         save_processing_status()
         print(f"❌ Processing failed for {video_id}: {e}")
+
+
 
 # =============================
 # 🧹 Nettoyage automatique périodique avec logs persistants
