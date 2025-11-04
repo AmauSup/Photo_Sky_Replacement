@@ -1,0 +1,18 @@
+{
+  "net_G": "coord_resnet50",
+  "ckptdir": "E:\\SDV_B3\\Alternance\\photo-sky-replacement\\checkpoints_G_coord_resnet50",
+  "input_mode": "seq",
+  "datadir": "E:\\SDV_B3\\Alternance\\photo-sky-replacement\\temp_image_input_9e4bd9a4-8ad6-4900-9e70-d901c1b6881f",
+  "skybox": "bluesky1.jpg",
+  "in_size_w": 512,
+  "in_size_h": 512,
+  "out_size_w": 2880,
+  "out_size_h": 2160,
+  "skybox_center_crop": 0.8,
+  "auto_light_matching": true,
+  "relighting_factor": 0.0,
+  "recoloring_factor": 0.1,
+  "halo_effect": false,
+  "output_dir": "E:\\SDV_B3\\Alternance\\photo-sky-replacement\\outputs\\9e4bd9a4-8ad6-4900-9e70-d901c1b6881f",
+  "save_jpgs": true
+}

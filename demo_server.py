@@ -32,7 +32,7 @@ app = FastAPI(
     description="Dynamic Sky Replacement in Videos",
     version="1.0",
     # Taille maximale des requêtes : 10 Mo
-    max_request_size=10 * 1024 * 1024
+    max_request_size=310 * 1024 * 1024
 )
 
 # =============================
@@ -186,28 +186,29 @@ async def upload_single_file(file: UploadFile = File(...)):
             }
         
         # Determine file type
-        is_image = file_extension in image_extensions
-        is_video = file_extension in video_extensions
+        file_type = "image" if file_extension in image_extensions else "video"
         
-        # ✅ New limit: 10 MB for both
-        max_size = 10 * 1024 * 1024  # 10 MB
-        file_type = "image" if is_image else "video"
+        # ✅ Nouvelle limite : 10 Mo
+        max_size = 11 * 1024 * 1024  # 10 MB
+        file_type = "image" if file_extension in image_extensions else "video"
         
         # Generate unique ID for this upload
         video_id = str(uuid.uuid4())
         upload_path = UPLOAD_DIR / f"{video_id}{file_extension}"
         
-        # Save uploaded file
+        # ✅ Lecture par chunks (stream) pour ne pas saturer la RAM
+        total_size = 0
         async with aiofiles.open(upload_path, 'wb') as f:
-            content = await file.read()
-            await f.write(content)
+            while chunk := await file.read(1024 * 1024):  # 1 MB par lecture
+                total_size += len(chunk)
+                if total_size > max_size:
+                    await f.close()
+                    os.remove(upload_path)
+                    return {"success": False, "error": f"File too large. Maximum size is 10MB"}
+                await f.write(chunk)
         
-        # Validate file size
-        if len(content) == 0:
+        if total_size == 0:
             return {"success": False, "error": "Uploaded file is empty"}
-        
-        if len(content) > max_size:
-            return {"success": False, "error": f"File too large. Maximum size is 10MB"}
         
         # Initialize processing status
         processing_status[video_id] = {
@@ -222,7 +223,7 @@ async def upload_single_file(file: UploadFile = File(...)):
         results = [{
             "video_id": video_id,
             "filename": file.filename,
-            "size": len(content),
+            "size": total_size,
             "file_type": file_type
         }]
     
@@ -234,15 +235,16 @@ async def upload_single_file(file: UploadFile = File(...)):
         return {"success": False, "error": f"Upload failed: {str(e)}"}
 
 
+
 @app.post("/api/upload")
 async def upload_files(files: List[UploadFile] = File(...)):
     """Upload multiple video/image files for processing"""
     
-    if len(files) > 10:
-        return {"success": False, "error": "Maximum 10 files allowed"}
+    if len(files) > 31:
+        return {"success": False, "error": "Maximum 30 files allowed"}
     
     results = []
-    max_size = 10 * 1024 * 1024  # ✅ 10 MB for each file
+    max_size = 11 * 1024 * 1024  # ✅ 10 MB par fichier
     
     for file in files:
         try:
@@ -259,39 +261,152 @@ async def upload_files(files: List[UploadFile] = File(...)):
                 continue
             
             file_type = "image" if file_extension in image_extensions else "video"
-            
             video_id = str(uuid.uuid4())
             upload_path = UPLOAD_DIR / f"{video_id}{file_extension}"
             
+            total_size = 0
             async with aiofiles.open(upload_path, 'wb') as f:
-                content = await file.read()
-                await f.write(content)
+                while chunk := await file.read(1024 * 1024):  # ✅ 1 MB chunks
+                    total_size += len(chunk)
+                    if total_size > max_size:
+                        await f.close()
+                        os.remove(upload_path)
+                        break
+                    await f.write(chunk)
             
-            if len(content) == 0 or len(content) > max_size:
-                continue
-            
-            processing_status[video_id] = {
-                "status": "uploaded",
-                "filename": file.filename,
-                "file_path": str(upload_path),
-                "file_type": file_type,
-                "progress": 0,
-                "message": f"{file_type.title()} uploaded successfully"
-            }
-            
-            results.append({
-                "video_id": video_id,
-                "filename": file.filename,
-                "size": len(content),
-                "file_type": file_type
-            })
+            if 0 < total_size <= max_size:
+                processing_status[video_id] = {
+                    "status": "uploaded",
+                    "filename": file.filename,
+                    "file_path": str(upload_path),
+                    "file_type": file_type,
+                    "progress": 0,
+                    "message": f"{file_type.title()} uploaded successfully"
+                }
+                
+                results.append({
+                    "video_id": video_id,
+                    "filename": file.filename,
+                    "size": total_size,
+                    "file_type": file_type
+                })
         
-        except Exception as e:
+        except Exception:
             continue
     
     save_processing_status()
     
     return {"success": True, "files": results, "count": len(results)}
+
+from fastapi.responses import FileResponse
+import shutil
+import tempfile
+
+from fastapi.responses import FileResponse
+import tempfile
+import shutil
+
+@app.get("/api/download-batch/{batch_id}")
+def download_batch_zip(batch_id: str):
+    """Télécharge toutes les sorties d’un batch dans un seul zip"""
+    # Trouver tous les fichiers appartenant à ce batch
+    batch_files = {vid: info for vid, info in processing_status.items() if info.get("batch_id") == batch_id}
+
+    if not batch_files:
+        return {"success": False, "error": "Batch not found"}
+
+    # Créer un dossier temporaire pour ce batch
+    tmp_dir = Path(tempfile.mkdtemp())
+    for video_id, info in batch_files.items():
+        output_path = Path(info.get("output_path", ""))
+        if output_path.exists():
+            # Copie chaque résultat dans le dossier temporaire
+            shutil.copy2(output_path, tmp_dir / f"{info['filename']}")
+    
+    # Crée un ZIP à partir de ce dossier temporaire
+    zip_base = tmp_dir / f"sky_results_{batch_id}"
+    shutil.make_archive(str(zip_base), 'zip', tmp_dir)
+    zip_path = Path(f"{zip_base}.zip")
+
+    return FileResponse(
+        zip_path,
+        filename=f"sky_results_{batch_id}.zip",
+        media_type="application/zip",
+        background=BackgroundTask(lambda: shutil.rmtree(tmp_dir, ignore_errors=True))
+    )
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
+import tempfile
+import shutil
+import os
+
+@app.get("/api/download-recent/{count}")
+def download_recent_results(count: int = 5):
+    """
+    Télécharge les N derniers résultats dans outputs/ sous forme de ZIP.
+    Exemple : /api/download-recent/8 -> prend les 8 derniers dossiers traités.
+    """
+    outputs_dir = Path("outputs")
+    if not outputs_dir.exists():
+        return {"success": False, "error": "Outputs directory not found"}
+
+    # Liste les sous-dossiers dans outputs triés par date de modification
+    subdirs = sorted(
+        [d for d in outputs_dir.iterdir() if d.is_dir()],
+        key=lambda x: x.stat().st_mtime,
+        reverse=True
+    )[:count]
+
+    if not subdirs:
+        return {"success": False, "error": "No output folders found"}
+
+    # Crée le dossier principal de stockage temporaire
+    temp_root = Path("./temp_zips")
+    temp_root.mkdir(exist_ok=True)
+
+    # Supprime les anciens ZIPs (plus vieux qu’1h)
+    for old_zip in temp_root.glob("*.zip"):
+        try:
+            if old_zip.stat().st_mtime < time.time() - 3600:
+                old_zip.unlink()
+        except:
+            pass
+
+    # Crée un sous-dossier unique pour cette requête
+    unique_tmp = temp_root / f"zip_{uuid.uuid4().hex[:8]}"
+    unique_tmp.mkdir(exist_ok=True)
+
+    collected = 0
+    for folder in subdirs:
+        candidates = list(folder.glob("result.*"))
+        if not candidates:
+            continue
+        result_file = candidates[0]
+        ext = result_file.suffix
+        new_name = f"{folder.name}{ext}"
+        shutil.copy2(result_file, unique_tmp / new_name)
+        collected += 1
+
+    if collected == 0:
+        shutil.rmtree(unique_tmp, ignore_errors=True)
+        return {"success": False, "error": "No result files found"}
+
+    # Crée le ZIP à partir du sous-dossier unique (et pas du dossier parent)
+    zip_base = temp_root / f"sky_results_last_{collected}"
+    shutil.make_archive(str(zip_base), 'zip', unique_tmp)
+    zip_path = Path(f"{zip_base}.zip")
+
+    # Nettoie le sous-dossier après création
+    shutil.rmtree(unique_tmp, ignore_errors=True)
+
+    return FileResponse(
+        zip_path,
+        filename=f"sky_results_last_{collected}.zip",
+        media_type="application/zip"
+    )
+
+
+
 
 
 @app.post("/api/process-batch")
@@ -304,6 +419,56 @@ async def process_batch(
     recoloring_factor: float = Form(0.1),
     halo_effect: bool = Form(True)
 ):
+    """Start batch processing of multiple files sequentially"""
+    
+    import random
+
+    batch_id = str(uuid.uuid4())
+    successful_jobs = []
+
+    # ✅ On traite les fichiers un par un
+    for video_id in video_ids:
+        if video_id not in processing_status:
+            continue
+
+        # Choix du ciel
+        if randomize_skybox:
+            selected_template = random.choice(list(SKY_TEMPLATES.keys()))
+        else:
+            selected_template = sky_template or list(SKY_TEMPLATES.keys())[0]
+
+        # Configuration
+        request_data = ProcessingRequest(
+            video_id=video_id,
+            sky_template=selected_template,
+            auto_light_matching=auto_light_matching,
+            relighting_factor=relighting_factor,
+            recoloring_factor=recoloring_factor,
+            halo_effect=halo_effect
+        )
+
+        # Met à jour le statut
+        processing_status[video_id].update({
+            "status": "processing",
+            "message": f"Processing with {SKY_TEMPLATES[selected_template]['name']} sky...",
+            "batch_id": batch_id,
+            "selected_skybox": selected_template
+        })
+        save_processing_status()
+
+        # 🔹 Attendre la fin du traitement avant de passer au suivant
+        await run_skyar_processing(video_id, request_data)
+        successful_jobs.append(video_id)
+
+    save_processing_status()
+
+    return {
+        "success": True,
+        "message": f"Batch sequential processing completed for {len(successful_jobs)} files",
+        "batch_id": batch_id,
+        "jobs": successful_jobs
+    }
+
     """Start batch processing of multiple files"""
     
     import random

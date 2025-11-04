@@ -198,6 +198,14 @@
                 Select Files to Start Batch Processing
             </button>
         </div>
+        <!-- Inline Processing Loader -->
+        <div id="inline-loading" class="hidden bg-white rounded-lg shadow-sm p-6 mb-8 text-center border border-gray-200">
+            <div class="flex flex-col items-center">
+                <img src="/static/loading.gif" alt="Processing..." class="w-16 h-16 mb-4 animate-pulse">
+                <p class="text-gray-700 text-base font-medium">⏳ Processing files... Please wait</p>
+            </div>
+        </div>
+
 
         <!-- Batch Progress Section -->
         <div id="batch-progress-section" class="bg-white rounded-lg shadow-sm p-6 mb-8 hidden">
@@ -218,6 +226,14 @@
             </div>
         </div>
     </main>
+    <!-- Download All Button -->
+<div id="download-all-section" class="hidden bg-white rounded-lg shadow-sm p-6 mb-8 text-center">
+    <button id="download-all-btn" 
+            class="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition-colors">
+        ⬇️ Download All Results (ZIP)
+    </button>
+</div>
+
 
     <!-- Results Carousel -->
     <div id="results-carousel" class="bg-white border-t mt-16 hidden">
@@ -277,6 +293,9 @@
             </button>
         </div>
     </div>
+
+    
+
 
     <!-- Footer -->
     <footer class="bg-white border-t mt-16">
@@ -352,6 +371,10 @@
         // Results carousel
         const resultsCarousel = document.getElementById('results-carousel');
         const carouselContainer = document.getElementById('carousel-container');
+
+        const downloadAllSection = document.getElementById('download-all-section');
+        const downloadAllBtn = document.getElementById('download-all-btn');
+
 
         // Upload area click handler
         uploadArea.addEventListener('click', () => {
@@ -660,57 +683,27 @@
                 filesPreview.appendChild(moreDiv);
             }
         }
-
-        async function startProcessing() {
-            if (!currentVideoId || !selectedSkyTemplate) return;
-
-            const requestData = {
-                video_id: currentVideoId,
-                sky_template: selectedSkyTemplate,
-                auto_light_matching: document.getElementById('auto-light').checked,
-                relighting_factor: parseFloat(relightingFactor.value),
-                recoloring_factor: parseFloat(recoloringFactor.value),
-                halo_effect: document.getElementById('halo-effect').checked
-            };
-
-            try {
-                const response = await fetch(baseUrl + 'api/process', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(requestData)
-                });
-
-                const result = await response.json();
-                
-                if (result.success) {
-                    progressSection.classList.remove('hidden');
-                    processBtn.disabled = true;
-                    processBtn.textContent = 'Processing...';
-                    
-                    // Start polling for progress
-                    startProgressPolling();
-                } else {
-                    showMessage('Processing failed: ' + result.message, 'error');
-                }
-            } catch (error) {
-                showMessage('Processing failed: ' + error.message, 'error');
-            }
+        // 🔹 Inline loading indicator control
+        function showLoadingOverlay() {
+            document.getElementById('inline-loading').classList.remove('hidden');
         }
+
+        function hideLoadingOverlay() {
+            document.getElementById('inline-loading').classList.add('hidden');
+        }
+
 
         async function startProcessing() {
             if (uploadedFiles.length === 0) return;
-
+        
             try {
-                const formData = new FormData();
+                showLoadingOverlay(); // ✅ afficher le GIF
                 
-                // Add all video IDs
+                const formData = new FormData();
                 uploadedFiles.forEach(file => {
                     formData.append('video_ids', file.video_id);
                 });
                 
-                // Add settings
                 formData.append('randomize_skybox', randomizeSkybox.checked);
                 if (!randomizeSkybox.checked && selectedSkyTemplate) {
                     formData.append('sky_template', selectedSkyTemplate);
@@ -719,12 +712,12 @@
                 formData.append('relighting_factor', parseFloat(relightingFactor.value));
                 formData.append('recoloring_factor', parseFloat(recoloringFactor.value));
                 formData.append('halo_effect', document.getElementById('halo-effect').checked);
-
+        
                 const response = await fetch(baseUrl + 'api/process-batch', {
                     method: 'POST',
                     body: formData
                 });
-
+        
                 const result = await response.json();
                 
                 if (result.success) {
@@ -732,17 +725,18 @@
                     batchProgressSection.classList.remove('hidden');
                     processBtn.disabled = true;
                     processBtn.textContent = 'Processing...';
-                    
-                    // Start polling for batch progress
                     startBatchProgressPolling();
                     showMessage(`Batch processing started for ${result.jobs.length} files`, 'success');
                 } else {
                     showMessage('Processing failed: ' + result.message, 'error');
+                    hideLoadingOverlay();
                 }
             } catch (error) {
                 showMessage('Processing failed: ' + error.message, 'error');
+                hideLoadingOverlay();
             }
         }
+        
 
         function startBatchProgressPolling() {
             batchPollingInterval = setInterval(async () => {
@@ -755,6 +749,7 @@
                     if (status.completed === status.total_files) {
                         clearInterval(batchPollingInterval);
                         showBatchCompleted(status);
+                        hideLoadingOverlay();
                     }
                 } catch (error) {
                     console.error('Error polling batch status:', error);
@@ -805,7 +800,15 @@
             showMessage(`Batch processing completed! ${status.completed} files processed successfully.`, 'success');
             processBtn.disabled = false;
             processBtn.textContent = 'Process New Batch';
+        
+            // ✅ Affiche le bouton ZIP
+            downloadAllSection.classList.remove('hidden');
+            downloadAllBtn.onclick = () => {
+                window.location.href = baseUrl + `api/download-recent/${uploadedFiles.length}`;
+
+            };
         }
+        
 
         function updateResultsCarousel() {
             if (completedResults.length === 0) {
