@@ -163,54 +163,65 @@ async def test_upload_size(file: UploadFile = File(...)):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+from PIL import Image
+import io
+
 @app.post("/api/upload-single")
 async def upload_single_file(file: UploadFile = File(...)):
-    """Upload a single file (for backward compatibility)"""
-    
+    """Upload et redimensionne les images pour traitement rapide"""
     try:
-        # Validate file type
         if not file.filename:
             return {"success": False, "error": "No file provided"}
-            
-        file_extension = Path(file.filename).suffix.lower()
-        
-        # Define allowed file types
-        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv']
-        image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp', '.heic', '.heif']
-        allowed_extensions = video_extensions + image_extensions
-        
-        if file_extension not in allowed_extensions:
-            return {
-                "success": False,
-                "error": f"Unsupported file type. Please upload a video ({', '.join(video_extensions)}) or image ({', '.join(image_extensions)}) file."
-            }
-        
-        # Determine file type
-        file_type = "image" if file_extension in image_extensions else "video"
-        
-        # ✅ Nouvelle limite : 10 Mo
-        max_size = 11 * 1024 * 1024  # 10 MB
-        file_type = "image" if file_extension in image_extensions else "video"
-        
-        # Generate unique ID for this upload
+
+        ext = Path(file.filename).suffix.lower()
+        image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.webp']
+        video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm']
+        allowed = image_extensions + video_extensions
+
+        if ext not in allowed:
+            return {"success": False, "error": "Unsupported file type"}
+
+        file_type = "image" if ext in image_extensions else "video"
         video_id = str(uuid.uuid4())
-        upload_path = UPLOAD_DIR / f"{video_id}{file_extension}"
-        
-        # ✅ Lecture par chunks (stream) pour ne pas saturer la RAM
+        upload_path = UPLOAD_DIR / f"{video_id}{ext}"
+
+        max_size = 11 * 1024 * 1024  # 10 MB limite
         total_size = 0
+
+        # Lire le contenu
         async with aiofiles.open(upload_path, 'wb') as f:
-            while chunk := await file.read(1024 * 1024):  # 1 MB par lecture
-                total_size += len(chunk)
-                if total_size > max_size:
-                    await f.close()
-                    os.remove(upload_path)
-                    return {"success": False, "error": f"File too large. Maximum size is 10MB"}
+            while chunk := await file.read(1024 * 1024):
                 await f.write(chunk)
-        
+
+        total_size = len(content)
+
         if total_size == 0:
-            return {"success": False, "error": "Uploaded file is empty"}
-        
-        # Initialize processing status
+            return {"success": False, "error": "Empty file"}
+
+        if total_size > max_size:
+            return {"success": False, "error": "File too large (max 10MB)"}
+
+        # ✅ Redimensionnement si image
+        if file_type == "image":
+            image = Image.open(io.BytesIO(content))
+
+            # Taille max cible (tu peux ajuster)
+            max_dim = 1920  # largeur max 1920 px (≈ Full HD)
+
+            width, height = image.size
+            if max(width, height) > max_dim:
+                ratio = max_dim / float(max(width, height))
+                new_size = (int(width * ratio), int(height * ratio))
+                image = image.resize(new_size, Image.LANCZOS)
+                print(f"🔧 Image resized from {width}x{height} → {new_size}")
+
+            # Compression légère pour accélérer encore
+            image.save(upload_path, format="JPEG", quality=90)
+        else:
+            # Sauvegarde brute pour les vidéos
+            async with aiofiles.open(upload_path, 'wb') as f:
+                await f.write(content)
+
         processing_status[video_id] = {
             "status": "uploaded",
             "filename": file.filename,
@@ -219,21 +230,33 @@ async def upload_single_file(file: UploadFile = File(...)):
             "progress": 0,
             "message": f"{file_type.title()} uploaded successfully"
         }
-        
-        results = [{
-            "video_id": video_id,
-            "filename": file.filename,
-            "size": total_size,
-            "file_type": file_type
-        }]
-    
+
         save_processing_status()
-        
-        return {"success": True, "files": results, "count": len(results)}
-    
+
+        print(f"📤 Upload received: {file.filename}, size={len(content)} bytes, type={file.content_type}")
+
+
+        return {
+            "success": True,
+            "files": [{
+                "video_id": video_id,
+                "filename": file.filename,
+                "size": total_size,
+                "file_type": file_type
+            }]
+        }
+
     except Exception as e:
         return {"success": False, "error": f"Upload failed: {str(e)}"}
 
+
+@app.get("/api/download-recent/{count}")
+async def download_recent(count: int):
+    """Renvoie le dernier ZIP généré ou le plus récent."""
+    zips = sorted(Path("./temp_zips").glob("*.zip"), key=lambda f: f.stat().st_mtime, reverse=True)
+    if not zips:
+        raise HTTPException(status_code=404, detail="No ZIP found")
+    return FileResponse(zips[0], filename=zips[0].name, media_type="application/zip")
 
 
 @app.post("/api/upload")
@@ -306,104 +329,110 @@ from fastapi.responses import FileResponse
 import tempfile
 import shutil
 
-@app.get("/api/download-batch/{batch_id}")
-def download_batch_zip(batch_id: str):
-    """Télécharge toutes les sorties d’un batch dans un seul zip"""
-    # Trouver tous les fichiers appartenant à ce batch
-    batch_files = {vid: info for vid, info in processing_status.items() if info.get("batch_id") == batch_id}
+@app.get("/api/download-zip/{video_id}")
+async def download_zip(video_id: str):
+    """Télécharge le ZIP des fichiers traités et supprime ensuite tout (ZIP + images)."""
+    if video_id not in processing_status:
+        raise HTTPException(status_code=404, detail="File not found")
 
-    if not batch_files:
-        return {"success": False, "error": "Batch not found"}
+    status = processing_status[video_id]
+    zip_path = Path(status.get("zip_path", ""))
+    output_path = Path(status.get("output_path", ""))
 
-    # Créer un dossier temporaire pour ce batch
-    tmp_dir = Path(tempfile.mkdtemp())
-    for video_id, info in batch_files.items():
-        output_path = Path(info.get("output_path", ""))
-        if output_path.exists():
-            # Copie chaque résultat dans le dossier temporaire
-            shutil.copy2(output_path, tmp_dir / f"{info['filename']}")
-    
-    # Crée un ZIP à partir de ce dossier temporaire
-    zip_base = tmp_dir / f"sky_results_{batch_id}"
-    shutil.make_archive(str(zip_base), 'zip', tmp_dir)
-    zip_path = Path(f"{zip_base}.zip")
+    if not zip_path.exists():
+        raise HTTPException(status_code=404, detail="ZIP not found")
+
+    def cleanup_after_zip():
+        """Supprime le ZIP + les fichiers individuels après un délai."""
+        try:
+            print(f"🕐 Waiting before cleaning ZIP for {video_id}...")
+            time.sleep(300)  # 5 min
+            # Supprimer ZIP
+            if zip_path.exists():
+                zip_path.unlink(missing_ok=True)
+            # Supprimer dossier output
+            folder = output_path.parent if output_path.exists() else None
+            if folder and folder.exists():
+                shutil.rmtree(folder, ignore_errors=True)
+            # Supprimer upload
+            for f in Path("uploads").glob(f"{video_id}*"):
+                f.unlink(missing_ok=True)
+            processing_status.pop(video_id, None)
+            save_processing_status()
+            print(f"🧹 Cleaned ZIP and related files for {video_id}")
+        except Exception as e:
+            print(f"⚠️ Cleanup ZIP error for {video_id}: {e}")
+
+    def background_cleanup():
+        threading.Thread(target=cleanup_after_zip, daemon=True).start()
 
     return FileResponse(
-        zip_path,
-        filename=f"sky_results_{batch_id}.zip",
+        path=zip_path,
+        filename=f"sky_results_{video_id}.zip",
         media_type="application/zip",
-        background=BackgroundTask(lambda: shutil.rmtree(tmp_dir, ignore_errors=True))
+        background=BackgroundTask(background_cleanup)
     )
+
+@app.get("/api/download-batch-zip/{batch_id}")
+async def download_batch_zip(batch_id: str):
+    """Télécharge le ZIP global d’un batch."""
+    batch_zip = Path(f"./temp_zips/batch_{batch_id}.zip")
+    if not batch_zip.exists():
+        raise HTTPException(status_code=404, detail="Batch ZIP not found")
+
+    def cleanup_delayed():
+        """Supprime le ZIP du batch après 1h."""
+        try:
+            print(f"🕐 Waiting before cleaning batch ZIP {batch_id}...")
+            time.sleep(3600)
+            if batch_zip.exists():
+                batch_zip.unlink(missing_ok=True)
+                print(f"🧹 Cleaned batch ZIP for {batch_id}")
+        except Exception as e:
+            print(f"⚠️ Cleanup error for batch ZIP {batch_id}: {e}")
+
+    def background_cleanup():
+        threading.Thread(target=cleanup_delayed, daemon=True).start()
+
+    return FileResponse(
+        path=batch_zip,
+        filename=f"SkyAR_batch_{batch_id}.zip",
+        media_type="application/zip",
+        background=BackgroundTask(background_cleanup)
+    )
+
+
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 import tempfile
 import shutil
 import os
 
-@app.get("/api/download-recent/{count}")
-def download_recent_results(count: int = 5):
-    """
-    Télécharge les N derniers résultats dans outputs/ sous forme de ZIP.
-    Exemple : /api/download-recent/8 -> prend les 8 derniers dossiers traités.
-    """
-    outputs_dir = Path("outputs")
-    if not outputs_dir.exists():
-        return {"success": False, "error": "Outputs directory not found"}
+import threading
 
-    # Liste les sous-dossiers dans outputs triés par date de modification
-    subdirs = sorted(
-        [d for d in outputs_dir.iterdir() if d.is_dir()],
-        key=lambda x: x.stat().st_mtime,
-        reverse=True
-    )[:count]
-
-    if not subdirs:
-        return {"success": False, "error": "No output folders found"}
-
-    # Crée le dossier principal de stockage temporaire
-    temp_root = Path("./temp_zips")
-    temp_root.mkdir(exist_ok=True)
-
-    # Supprime les anciens ZIPs (plus vieux qu’1h)
-    for old_zip in temp_root.glob("*.zip"):
+def periodic_cleanup():
+    """Nettoie les fichiers temporaires toutes les heures (ZIP > 1h)."""
+    while True:
         try:
-            if old_zip.stat().st_mtime < time.time() - 3600:
-                old_zip.unlink()
-        except:
-            pass
+            now = time.time()
+            # Supprimer les ZIP vieux d'une heure
+            temp_zips = Path("temp_zips")
+            temp_zips.mkdir(exist_ok=True)
+            for zip_file in temp_zips.glob("*.zip"):
+                try:
+                    if zip_file.stat().st_mtime < now - 3600:  # 1h
+                        zip_file.unlink(missing_ok=True)
+                        print(f"🧹 Deleted old ZIP: {zip_file.name}")
+                except Exception as e:
+                    print(f"⚠️ Error deleting old ZIP {zip_file}: {e}")
+            time.sleep(3600)  # vérifie toutes les heures
+        except Exception as e:
+            print(f"⚠️ Cleanup loop error: {e}")
 
-    # Crée un sous-dossier unique pour cette requête
-    unique_tmp = temp_root / f"zip_{uuid.uuid4().hex[:8]}"
-    unique_tmp.mkdir(exist_ok=True)
 
-    collected = 0
-    for folder in subdirs:
-        candidates = list(folder.glob("result.*"))
-        if not candidates:
-            continue
-        result_file = candidates[0]
-        ext = result_file.suffix
-        new_name = f"{folder.name}{ext}"
-        shutil.copy2(result_file, unique_tmp / new_name)
-        collected += 1
+# Lancer le thread en arrière-plan
+threading.Thread(target=periodic_cleanup, daemon=True).start()
 
-    if collected == 0:
-        shutil.rmtree(unique_tmp, ignore_errors=True)
-        return {"success": False, "error": "No result files found"}
-
-    # Crée le ZIP à partir du sous-dossier unique (et pas du dossier parent)
-    zip_base = temp_root / f"sky_results_last_{collected}"
-    shutil.make_archive(str(zip_base), 'zip', unique_tmp)
-    zip_path = Path(f"{zip_base}.zip")
-
-    # Nettoie le sous-dossier après création
-    shutil.rmtree(unique_tmp, ignore_errors=True)
-
-    return FileResponse(
-        zip_path,
-        filename=f"sky_results_last_{collected}.zip",
-        media_type="application/zip"
-    )
 
 
 
@@ -631,37 +660,66 @@ async def check_completion(video_id: str):
         return {"success": False, "message": "Still processing"}
 
 
+from starlette.background import BackgroundTask
+import threading, time
+
 @app.get("/api/download/{video_id}")
 async def download_result(video_id: str):
-    """Download the processed file (image or video)"""
-    
+    """Télécharge le fichier traité et nettoie uniquement ce fichier après un délai (sans casser le ZIP)."""
     if video_id not in processing_status:
         raise HTTPException(status_code=404, detail="File not found")
-    
+
     status = processing_status[video_id]
-    
     if status["status"] != "completed":
         raise HTTPException(status_code=400, detail="Processing not completed")
-    
+
     output_path = Path(status.get("output_path"))
-    
     if not output_path.exists():
         raise HTTPException(status_code=404, detail="Processed file not found")
-    
-    # Determine file type and set appropriate response
+
     file_type = status.get("file_type", "video")
-    if file_type == "image":
-        media_type = "image/jpeg"
-        filename = f"skyar_result_{video_id}.jpg"
-    else:
-        media_type = "video/mp4"
-        filename = f"skyar_result_{video_id}.mp4"
-    
+    filename = f"skyar_result_{video_id}.{'jpg' if file_type == 'image' else 'mp4'}"
+    media_type = "image/jpeg" if file_type == "image" else "video/mp4"
+
+    # ✅ S'assurer que le ZIP existe encore (le régénérer si supprimé)
+    zip_path = Path(status.get("zip_path", ""))
+    output_dir = output_path.parent
+    try:
+        if not zip_path.exists():
+            zip_dir = Path("./temp_zips")
+            zip_dir.mkdir(exist_ok=True)
+            new_zip = zip_dir / f"{video_id}.zip"
+            shutil.make_archive(str(new_zip.with_suffix("")), "zip", output_dir)
+            processing_status[video_id]["zip_path"] = str(new_zip)
+            save_processing_status()
+            print(f"♻️ Recreated missing ZIP for {video_id}")
+    except Exception as e:
+        print(f"⚠️ Could not recreate ZIP for {video_id}: {e}")
+
+    def cleanup_delayed():
+        """Supprime uniquement le fichier individuel (pas le ZIP)."""
+        try:
+            print(f"🕐 Waiting before cleaning single file for {video_id}...")
+            time.sleep(300)  # 5 minutes
+            # Supprime uniquement le fichier (pas le dossier ni le ZIP)
+            if output_path.exists():
+                output_path.unlink(missing_ok=True)
+            print(f"🧹 Cleaned single file for {video_id}")
+        except Exception as e:
+            print(f"⚠️ Cleanup error for {video_id}: {e}")
+
+    # Exécuter le nettoyage dans un thread séparé
+    def background_cleanup():
+        threading.Thread(target=cleanup_delayed, daemon=True).start()
+
     return FileResponse(
         path=output_path,
         filename=filename,
-        media_type=media_type
+        media_type=media_type,
+        background=BackgroundTask(background_cleanup)
     )
+
+
 
 
 @app.get("/api/skybox/{filename}")
@@ -735,85 +793,70 @@ async def test_page(request: Request):
 
 
 async def run_skyar_processing(video_id: str, request: ProcessingRequest):
-    """Run SkyAR processing in the background for both images and videos"""
-    
+    """Run SkyAR processing in the background for both images and videos."""
     try:
         status = processing_status[video_id]
-        input_path = status["file_path"]
-        file_type = status.get("file_type", "video")  # Default to video for backward compatibility
-        
-        # Determine input mode and output size based on file type
+        input_path = Path(status["file_path"])
+        file_type = status.get("file_type", "video")
+
+        # ========== Préparation de l’entrée ==========
         if file_type == "image":
-            # For images, we need to create a directory and copy the image there
-            # because skymagic expects a directory for 'seq' mode
+            from PIL import Image
+            import shutil
+
             input_dir = Path(f"./temp_image_input_{video_id}")
             input_dir.mkdir(exist_ok=True)
-            
-            # Copy image to the input directory
-            import shutil
-            from PIL import Image
-            
-            # Get original image dimensions to maintain aspect ratio
+
             img = Image.open(input_path)
             orig_width, orig_height = img.size
-            
-            # Calculate output size while maintaining aspect ratio (max 4K: 3840x2160)
             max_4k_width, max_4k_height = 3840, 2160
-            
+
             if orig_width <= max_4k_width and orig_height <= max_4k_height:
-                # Image is 4K or smaller - keep original resolution
-                out_width = orig_width
-                out_height = orig_height
+                out_width, out_height = orig_width, orig_height
                 print(f"Keeping original resolution: {out_width}x{out_height}")
             else:
-                # Image is larger than 4K - scale down while preserving aspect ratio
                 aspect_ratio = orig_width / orig_height
-                
                 if aspect_ratio > (max_4k_width / max_4k_height):
-                    # Width is the limiting factor
                     out_width = max_4k_width
                     out_height = int(max_4k_width / aspect_ratio)
                 else:
-                    # Height is the limiting factor
                     out_height = max_4k_height
                     out_width = int(max_4k_height * aspect_ratio)
-                
-                print(f"Scaling from {orig_width}x{orig_height} to {out_width}x{out_height} (4K max)")
-            
-            # Ensure dimensions are even numbers (required for video processing)
-            out_width = out_width if out_width % 2 == 0 else out_width - 1
-            out_height = out_height if out_height % 2 == 0 else out_height - 1
-            
-            image_name = Path(input_path).name
-            shutil.copy2(input_path, input_dir / image_name)
-            
+                print(f"Scaling from {orig_width}x{orig_height} to {out_width}x{out_height}")
+
+            # S'assurer que les dimensions sont paires
+            out_width -= out_width % 2
+            out_height -= out_height % 2
+
+            shutil.copy2(input_path, input_dir / input_path.name)
             input_mode = "seq"
-            datadir = str(input_dir.resolve())  # ✅ chemin absolu
+            datadir = str(input_dir.resolve())
 
-        else:
+        else:  # VIDÉO
             input_mode = "video"
-            datadir = input_path
-            out_width, out_height = 640, 360  # Lower resolution for videos
+            datadir = str(input_path.resolve())
+            out_width, out_height = 640, 360  # résolution réduite pour vitesse
 
-        # Optimize skybox quality based on output resolution
+        # ========== Configuration du traitement ==========
         if file_type == "image":
-            # For high-resolution images, adjust skybox processing for better quality
-            if out_width >= 2560 or out_height >= 1440:  # 2K+ images
-                skybox_center_crop = 0.8  # Less cropping for high-res
-                in_size_w, in_size_h = 512, 512  # Higher processing resolution
+            if out_width >= 2560 or out_height >= 1440:
+                skybox_center_crop = 0.8
+                in_size_w, in_size_h = 512, 512
             else:
-                skybox_center_crop = 0.6  # Standard cropping
-                in_size_w, in_size_h = 384, 384  # Standard processing resolution
+                skybox_center_crop = 0.6
+                in_size_w, in_size_h = 384, 384
         else:
-            # For videos, use standard settings
             skybox_center_crop = 0.5
             in_size_w, in_size_h = 384, 384
-        
+
+        output_dir = OUTPUT_DIR / video_id
+        output_dir.mkdir(exist_ok=True)
+
         config = {
             "net_G": "coord_resnet50",
             "ckptdir": str((BASE_DIR / "checkpoints_G_coord_resnet50").resolve()),
             "input_mode": input_mode,
-            "datadir": str(input_dir.resolve()) if file_type == "image" else str(Path(input_path).resolve()),
+            "datadir": datadir,
             "skybox": SKY_TEMPLATES[request.sky_template]["file"],
             "in_size_w": in_size_w,
             "in_size_h": in_size_h,
@@ -824,51 +867,21 @@ async def run_skyar_processing(video_id: str, request: ProcessingRequest):
             "relighting_factor": request.relighting_factor,
             "recoloring_factor": request.recoloring_factor,
             "halo_effect": request.halo_effect,
-            "output_dir": str((OUTPUT_DIR / video_id).resolve()),
-            "save_jpgs": True if file_type == "image" else False
+            "output_dir": str(output_dir.resolve()),
+            "save_jpgs": file_type == "image"
         }
 
-        
-        # Create output directory
-        output_dir = OUTPUT_DIR / video_id
-        output_dir.mkdir(exist_ok=True)
-        
-        # Save config file
         config_path = output_dir / "config.json"
-        with open(config_path, 'w') as f:
+        with open(config_path, "w") as f:
             json.dump(config, f, indent=2)
-        
-        # Update status
-        processing_status[video_id].update({
-            "status": "processing",
-            "progress": 10,
-            "message": f"Processing {file_type} with {SKY_TEMPLATES[request.sky_template]['name']} sky..."
-        })
-        save_processing_status()  # Save to file
-        
+
+        # ========== Lancement du traitement ==========
         import sys
-
-        # ✅ Utilise le bon interpréteur Python (python.exe ou python3)
         python_exec = sys.executable
-
-        # ✅ Chemin absolu vers skymagic.py
         skymagic_path = str(BASE_DIR / "skymagic.py")
 
-        # ✅ Utilise toujours le chemin absolu du config.json
-        cmd = [
-            python_exec,
-            str(skymagic_path),
-            "--path",
-            str(config_path.resolve())
-        ]
-
-        # (facultatif mais utile pour debug)
+        cmd = [python_exec, skymagic_path, "--path", str(config_path.resolve())]
         print(f"[DEBUG] Running: {' '.join(cmd)}")
-        print(f"[DEBUG] Working directory: {BASE_DIR}")
-
-        # ✅ Exécute depuis le bon dossier du projet
-        print(f"[DEBUG] datadir exists: {os.path.exists(config['datadir'])}")
-        print(f"[DEBUG] datadir path: {config['datadir']}")
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -877,131 +890,133 @@ async def run_skyar_processing(video_id: str, request: ProcessingRequest):
             stderr=asyncio.subprocess.PIPE
         )
 
-
-        
-        # Monitor the process and update progress periodically
-        start_time = time.time()
-        
-        # Update progress while process is running
         async def monitor_progress():
-            if file_type == "image":
-                # Images process much faster
-                progress_values = [25, 50, 75, 90]
-                base_interval = 3  # 3 seconds for images
-            else:
-                # Videos take longer
-                progress_values = [15, 30, 45, 60, 75, 85, 92, 95, 97, 98]
-                base_interval = 15  # 15 seconds for videos
-            
-            for i, progress in enumerate(progress_values):
+            """Mise à jour du pourcentage de progression."""
+            steps = [25, 50, 75, 90] if file_type == "image" else [15, 30, 45, 60, 75, 85, 92, 95]
+            interval = 3 if file_type == "image" else 15
+            for p in steps:
                 if process.returncode is not None:
                     break
-                    
-                wait_time = base_interval if file_type == "image" else (base_interval if i < 6 else base_interval * 2)
-                await asyncio.sleep(wait_time)
-                
-                if video_id in processing_status:  # Check if still exists
-                    processing_status[video_id].update({
-                        "progress": progress,
-                        "message": f"Processing {file_type}... ({progress}%)"
-                    })
-                    save_processing_status()  # Save to file
-            
-            # If we've gone through all progress steps but process is still running,
-            # keep it at high percentage and check periodically
-            final_progress = 95 if file_type == "image" else 98
-            while process.returncode is None:
-                await asyncio.sleep(5 if file_type == "image" else 10)
-                if video_id in processing_status:
-                    processing_status[video_id].update({
-                        "progress": final_progress,
-                        "message": f"Finalizing {file_type} processing..."
-                    })
-                    save_processing_status()  # Save to file
-        
-        # Start progress monitoring
-        progress_task = asyncio.create_task(monitor_progress())
-        
-        # Wait for process to complete
+                await asyncio.sleep(interval)
+                processing_status[video_id].update({
+                    "progress": p,
+                    "message": f"Processing {file_type}... ({p}%)"
+                })
+                save_processing_status()
+
+        monitor_task = asyncio.create_task(monitor_progress())
         stdout, stderr = await process.communicate()
-        
-        # Cancel progress monitoring
-        progress_task.cancel()
-        
-        if process.returncode == 0:
-            # Processing completed successfully
-            if file_type == "image":
-                # For images, look for the processed image in the output directory
-                # The filename pattern should be: imagename_syneth.jpg (without extension)
-                import glob
-                
-                # Find syneth files
-                syneth_files = glob.glob(str(output_dir / "*syneth.jpg"))
-                
-                if syneth_files:
-                    # Use the first syneth file found
-                    final_output = output_dir / "result.jpg"
-                    shutil.copy2(syneth_files[0], str(final_output))
-                else:
-                    # Debug: list all files in output directory
-                    all_files = list(output_dir.glob("*"))
-                    print(f"Debug: Files in output directory: {[f.name for f in all_files]}")
-                    
-                    # Try to find any processed image (not input or mask)
-                    candidates = [f for f in all_files 
-                                if f.suffix.lower() in ['.jpg', '.jpeg'] 
-                                and not any(x in f.name.lower() for x in ['input', 'mask', 'config'])]
-                    
-                    if candidates:
-                        # Sort by size (largest is likely the result)
-                        candidates.sort(key=lambda x: x.stat().st_size, reverse=True)
-                        final_output = output_dir / "result.jpg"
-                        shutil.copy2(str(candidates[0]), str(final_output))
-                    else:
-                        raise Exception(f"Output image not generated - found files: {[f.name for f in all_files]}")
-            else:
-                # For videos, look for demo.mp4
-                demo_path = Path("./demo.mp4")
-                if demo_path.exists():
-                    final_output = output_dir / "result.mp4"
-                    shutil.move(str(demo_path), str(final_output))
-                else:
-                    raise Exception("Output video not generated")
-            
-            processing_status[video_id].update({
-                "status": "completed",
-                "progress": 100,
-                "message": f"Sky replacement completed successfully!",
-                "output_path": str(final_output)
-            })
-            save_processing_status()  # Save to file
-            
-            # Clean up temporary image directory if it was created
-            if file_type == "image" and 'input_dir' in locals():
-                import shutil
-                shutil.rmtree(input_dir, ignore_errors=True)
-                
-        else:
-            # ✅ Tolère les caractères non UTF-8 (Windows)
-            try:
-                error_message = stderr.decode("utf-8")
-            except UnicodeDecodeError:
-                error_message = stderr.decode("latin-1", errors="replace")
-            print("=== STDERR START ===")
-            print(error_message)
-            print("=== STDERR END ===")
+        monitor_task.cancel()
 
+        # ========== Vérification du résultat ==========
+        if process.returncode != 0:
+            error_message = stderr.decode("utf-8", errors="replace")
+            raise Exception(f"SkyAR failed: {error_message}")
 
-            raise Exception(f"Processing failed: {error_message}")
+        # Sortie
+        if file_type == "image":
+            import glob
+            candidates = list(output_dir.glob("*syneth.jpg"))
+            if not candidates:
+                candidates = [f for f in output_dir.glob("*.jpg") if "mask" not in f.name.lower()]
+            if not candidates:
+                raise Exception("No output image found.")
+            final_output = output_dir / "result.jpg"
+            shutil.copy2(candidates[0], final_output)
 
-    
+        else:  # vidéo
+            demo_path = Path("./demo.mp4")
+            if not demo_path.exists():
+                raise Exception("No output video generated.")
+            final_output = output_dir / "result.mp4"
+            shutil.move(demo_path, final_output)
+
+        # ========== Mise à jour du statut ==========
+        processing_status[video_id].update({
+            "status": "completed",
+            "progress": 100,
+            "message": "Sky replacement completed successfully!",
+            "output_path": str(final_output)
+        })
+        save_processing_status()
+
+        # Nettoyage temporaire
+        if file_type == "image" and "input_dir" in locals():
+            import shutil
+            shutil.rmtree(input_dir, ignore_errors=True)
+
+        print(f"✅ Processing completed for {video_id}: {final_output}")
+
     except Exception as e:
         processing_status[video_id].update({
             "status": "error",
             "progress": 0,
             "message": f"Processing failed: {str(e)}"
         })
-        save_processing_status()  # Save to file
+        save_processing_status()
+        print(f"❌ Processing failed for {video_id}: {e}")
+
+# =============================
+# 🧹 Nettoyage automatique périodique avec logs persistants
+# =============================
+import threading
+import time
+import shutil
+from pathlib import Path
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Intervalle de vérification (secondes)
+CLEANUP_INTERVAL = 30 * 60   # Par défaut : 30 minutes
+# Âge maximum des fichiers (secondes)
+FILE_EXPIRATION = 60 * 60    # Par défaut : 1 heure
+
+# === Configuration du logger ===
+LOG_FILE = Path(BASE_DIR) / "cleanup.log"
+handler = RotatingFileHandler(LOG_FILE, maxBytes=5_000_000, backupCount=3)
+logging.basicConfig(
+    handlers=[handler],
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger("cleanup")
+
+def auto_cleanup():
+    """Supprime périodiquement les fichiers anciens dans uploads/, outputs/ et temp_zips/."""
+    paths = [Path("uploads"), Path("outputs"), Path("temp_zips")]
+
+    while True:
+        try:
+            now = time.time()
+            logger.info("🧹 Vérification des fichiers anciens...")
+
+            for folder in paths:
+                folder.mkdir(exist_ok=True)
+                for item in folder.iterdir():
+                    try:
+                        age_seconds = now - item.stat().st_mtime
+                        if age_seconds > FILE_EXPIRATION:
+                            if item.is_dir():
+                                shutil.rmtree(item, ignore_errors=True)
+                                logger.info(f"🗑️ Dossier supprimé (vieux de {age_seconds/60:.1f} min) : {item}")
+                            else:
+                                item.unlink(missing_ok=True)
+                                logger.info(f"🗑️ Fichier supprimé (vieux de {age_seconds/60:.1f} min) : {item}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Erreur de suppression {item}: {e}")
+
+            logger.info(f"✅ Nettoyage terminé. Prochaine vérification dans {CLEANUP_INTERVAL/60:.0f} min.\n")
+            time.sleep(CLEANUP_INTERVAL)
+
+        except Exception as e:
+            logger.error(f"⚠️ Erreur dans la boucle de nettoyage : {e}")
+            time.sleep(CLEANUP_INTERVAL)
+
+# Lancer le thread en arrière-plan
+threading.Thread(target=auto_cleanup, daemon=True).start()
+
+
 
 
 @app.get("/health")

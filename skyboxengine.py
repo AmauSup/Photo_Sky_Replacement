@@ -3,6 +3,37 @@ from cv2.ximgproc import guidedFilter
 import synrain
 import os
 
+def resize_cover(img, target_w, target_h):
+    """
+    Redimensionne l'image pour REMPLIR (cover) la cible sans déformation,
+    puis recadre au centre si nécessaire.
+    """
+    h, w = img.shape[:2]
+    if h == 0 or w == 0:
+        return np.zeros((target_h, target_w, 3), dtype=img.dtype)
+
+    scale = max(target_w / w, target_h / h)  # fill
+    new_w, new_h = int(w * scale), int(h * scale)
+    resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+
+    # Crop centré
+    x1 = max(0, (new_w - target_w) // 2)
+    y1 = max(0, (new_h - target_h) // 2)
+    x2, y2 = x1 + target_w, y1 + target_h
+    cropped = resized[y1:y2, x1:x2]
+
+    # Sécurité si bords
+    if cropped.shape[0] != target_h or cropped.shape[1] != target_w:
+        canvas = np.zeros((target_h, target_w, 3), dtype=cropped.dtype)
+        ch, cw = cropped.shape[:2]
+        oy = (target_h - ch) // 2
+        ox = (target_w - cw) // 2
+        canvas[oy:oy+ch, ox:ox+cw] = cropped
+        return canvas
+
+    return cropped
+
+
 class SkyBox():
 
     def __init__(self, args):
@@ -44,39 +75,46 @@ class SkyBox():
 
 
     def load_skybox(self):
-
         print('initialize skybox...')
 
+        out_w, out_h = self.args.out_size_w, self.args.out_size_h
+        cc = 1. / self.args.skybox_center_crop  # facteur > 1 pour avoir une image "x2" plus grande
+
         if '.jpg' in self.args.skybox:
-            # static backgroud
+            # === Skybox image statique ===
             skybox_img = cv2.imread(os.path.join(r'./skybox', self.args.skybox), cv2.IMREAD_COLOR)
             skybox_img = cv2.cvtColor(skybox_img, cv2.COLOR_BGR2RGB)
 
-            self.skybox_img = cv2.resize(
-                skybox_img, (self.args.out_size_w, self.args.out_size_h))
-            cc = 1. / self.args.skybox_center_crop
-            imgtile = cv2.resize(
-                skybox_img, (int(cc * self.args.out_size_w),
-                             int(cc*self.args.out_size_h)))
+            # 1) Image de base (exactement out_w x out_h) en COVER (pas de déformation)
+            self.skybox_img = resize_cover(skybox_img, out_w, out_h)
+
+            # 2) Version "x2" pour le panoramique/translation (plus grande que l’écran)
+            imgtile = resize_cover(skybox_img, int(cc * out_w), int(cc * out_h))
             self.skybox_imgx2 = self.tile_skybox_img(imgtile)
             self.skybox_imgx2 = np.expand_dims(self.skybox_imgx2, axis=0)
 
         else:
-            # video backgroud
+            # === Skybox vidéo ===
             cap = cv2.VideoCapture(os.path.join(r'./skybox', self.args.skybox))
             m_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            cc = 1. / self.args.skybox_center_crop
+
             self.skybox_imgx2 = np.zeros(
-                [m_frames, int(cc*self.args.out_size_h),
-                 int(cc*self.args.out_size_w), 3], np.uint8)
+                [m_frames, int(cc * out_h), int(cc * out_w), 3], np.uint8
+            )
+
             for i in range(m_frames):
-                _, skybox_img = cap.read()
+                ok, skybox_img = cap.read()
+                if not ok:
+                    # Si on ne lit plus, duplique la dernière frame valide
+                    if i > 0:
+                        self.skybox_imgx2[i, :, :, :] = self.skybox_imgx2[i-1, :, :, :]
+                    continue
+
                 skybox_img = cv2.cvtColor(skybox_img, cv2.COLOR_BGR2RGB)
-                imgtile = cv2.resize(
-                    skybox_img, (int(cc * self.args.out_size_w),
-                                 int(cc * self.args.out_size_h)))
+                imgtile = resize_cover(skybox_img, int(cc * out_w), int(cc * out_h))
                 skybox_imgx2 = self.tile_skybox_img(imgtile)
-                self.skybox_imgx2[i,:] = skybox_imgx2
+                self.skybox_imgx2[i, :, :, :] = skybox_imgx2
+
 
 
     def skymask_refinement(self, G_pred, img):

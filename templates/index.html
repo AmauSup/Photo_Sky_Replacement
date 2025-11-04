@@ -29,6 +29,26 @@
         }
     </style>
 </head>
+<!-- ===== LOADING OVERLAY ===== -->
+<div id="loadingOverlay" class="hidden fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+    <div class="flex flex-col items-center space-y-4">
+      <img src="/static/img/loading.gif" alt="Loading..." class="w-20 h-20 animate-spin-slow" />
+      <p class="text-white text-lg font-medium">Chargement en cours...</p>
+    </div>
+  </div>
+  
+  <style>
+    /* Petite rotation lente si tu veux pas de GIF */
+    @keyframes spin-slow {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .animate-spin-slow {
+      animation: spin-slow 2s linear infinite;
+    }
+    .hidden { display: none; }
+  </style>
+  
 <body class="bg-gray-50 min-h-screen">
     <!-- Header -->
     <header class="bg-white shadow-sm border-b">
@@ -374,6 +394,41 @@
 
         const downloadAllSection = document.getElementById('download-all-section');
         const downloadAllBtn = document.getElementById('download-all-btn');
+
+        const loadingOverlay = document.getElementById('loadingOverlay');
+
+async function uploadFiles(files) {
+  try {
+    // ✅ Affiche le GIF
+    loadingOverlay.classList.remove('hidden');
+
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('files', file);
+    }
+
+    const response = await fetch(baseUrl + 'api/upload', {
+      method: 'POST',
+      body: formData
+    });
+
+    const result = await response.json();
+
+    // ✅ Cache le GIF après la réponse
+    loadingOverlay.classList.add('hidden');
+
+    if (result.success) {
+      console.log('Upload réussi ✅');
+      // ... suite de ton code
+    } else {
+      alert(result.error || 'Erreur pendant l’upload');
+    }
+  } catch (err) {
+    loadingOverlay.classList.add('hidden');
+    alert('Erreur réseau : ' + err.message);
+  }
+}
+
 
 
         // Upload area click handler

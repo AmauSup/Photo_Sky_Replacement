@@ -97,12 +97,33 @@ class SkyFilter():
 
 
     def cvtcolor_and_resize(self, img_HD):
-
+        """Convertit en RGB sans déformer l'image.
+        On adapte la taille de sortie tout en gardant les proportions originales.
+        """
         img_HD = cv2.cvtColor(img_HD, cv2.COLOR_BGR2RGB)
         img_HD = np.array(img_HD / 255., dtype=np.float32)
-        img_HD = cv2.resize(img_HD, (self.out_size_w, self.out_size_h))
 
-        return img_HD
+        # Dimensions cibles (souvent 1920x1080)
+        target_w, target_h = self.out_size_w, self.out_size_h
+        h, w, _ = img_HD.shape
+
+        # Calcul du ratio d’échelle pour garder le ratio d’origine
+        scale = min(target_w / w, target_h / h)
+        new_w, new_h = int(w * scale), int(h * scale)
+
+        # Redimensionne sans déformation
+        resized = cv2.resize(img_HD, (new_w, new_h))
+
+        # Crée une image finale (target_h x target_w) avec fond noir (ou ciel)
+        final_img = np.zeros((target_h, target_w, 3), dtype=np.float32)
+
+        # Centre l’image redimensionnée
+        x_offset = (target_w - new_w) // 2
+        y_offset = (target_h - new_h) // 2
+        final_img[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = resized
+
+        return final_img
+
 
 
 
