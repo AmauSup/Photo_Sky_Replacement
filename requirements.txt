@@ -28,4 +28,3 @@ python-multipart
 jinja2
 aiofiles
 pillow
->>>>>>> 0d326cb (Initial commit)
