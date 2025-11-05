@@ -349,6 +349,17 @@ async def download_zip(video_id: str):
         media_type="application/zip",
         background=BackgroundTask(background_cleanup)
     )
+@app.get("/api/download-user-zip/{video_id}")
+async def download_user_zip(video_id: str):
+    if video_id not in processing_status:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    zip_path = Path(processing_status[video_id].get("zip_path", ""))
+    if not zip_path.exists():
+        raise HTTPException(status_code=404, detail="ZIP not found")
+
+    return FileResponse(zip_path, filename=zip_path.name, media_type="application/zip")
+
 
 @app.get("/api/download-batch-zip/{batch_id}")
 async def download_batch_zip(batch_id: str):

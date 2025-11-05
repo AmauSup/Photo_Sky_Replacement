@@ -849,19 +849,27 @@ async function uploadFiles(files) {
         }
 
         function showBatchCompleted(status) {
-            showMessage(`Batch processing completed! ${status.completed} files processed successfully.`, 'success');
+            showMessage(
+                `Batch processing completed! ${status.completed} files processed successfully.`,
+                'success'
+            );
+        
             processBtn.disabled = false;
             processBtn.textContent = 'Process New Batch';
         
-            // ✅ Affiche le bouton ZIP
+            // ✅ Affiche bouton ZIP global final
             downloadAllSection.classList.remove('hidden');
+        
             downloadAllBtn.onclick = () => {
-                //window.location.href = baseUrl + `api/download-recent/${uploadedFiles.length}`;
                 window.location.href = baseUrl + "api/download-latest-results";
-
-
             };
+            downloadAllBtn.textContent = "Préparation du ZIP...";
+            setTimeout(() => {
+                downloadAllBtn.textContent = "⬇️ Download All Results (ZIP)";
+            }, 3000);
+
         }
+        
         
 
         function updateResultsCarousel() {
