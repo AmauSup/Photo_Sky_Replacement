@@ -185,65 +185,44 @@ async def upload_single_file(file: UploadFile = File(...)):
         if ext not in allowed:
             return {"success": False, "error": "Unsupported file type"}
 
-        # ✅ Lire tout le fichier (mobile compatible)
         content = await file.read()
         total_size = len(content)
 
-        max_size = 11 * 1024 * 1024  # 10 MB limite
-
+        max_size = 11 * 1024 * 1024  # 10 MB
         if total_size == 0:
             return {"success": False, "error": "Empty file"}
         if total_size > max_size:
             return {"success": False, "error": "File too large (max 10MB)"}
 
-        file_type = "image" if ext in image_extensions else "video"
         video_id = str(uuid.uuid4())
-        upload_path = UPLOAD_DIR / f"{video_id}{ext}"
 
-        if file_type == "image":
-            image = Image.open(io.BytesIO(content))
+        # ✅ ALWAYS ABSOLUTE PATH
+        UPLOAD_DIR.mkdir(exist_ok=True, parents=True)
+        upload_path = (UPLOAD_DIR / f"{video_id}{ext}").resolve()
 
-            # ✅ Convertir HEIC / iPhone images → RGB automatiquement
-            if image.mode not in ("RGB", "RGBA"):
-                image = image.convert("RGB")
-
-            # ✅ Redimensionnement intelligent (garde qualité)
-            max_dim = 1920
-            w, h = image.size
-            if max(w, h) > max_dim:
-                scale = max_dim / float(max(w, h))
-                image = image.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-
-            # ✅ Sauvegarde compressée (optimisée mobile)
-            image.save(upload_path, format="JPEG", quality=92)
-
-        else:
-            # ✅ Vidéo → sauvegarde brute
-            async with aiofiles.open(upload_path, 'wb') as f:
-                await f.write(content)
+        # ✅ Write file
+        async with aiofiles.open(upload_path, 'wb') as f:
+            await f.write(content)
 
         processing_status[video_id] = {
             "status": "uploaded",
             "filename": file.filename,
             "file_path": str(upload_path),
-            "file_type": file_type,
+            "file_type": "image" if ext in image_extensions else "video",
             "progress": 0,
-            "message": f"{file_type.title()} uploaded successfully"
+            "message": "File uploaded successfully"
         }
         save_processing_status()
 
-        return {
-            "success": True,
-            "files": [{
-                "video_id": video_id,
-                "filename": file.filename,
-                "size": total_size,
-                "file_type": file_type
-            }]
-        }
+        return {"success": True, "files": [{
+            "video_id": video_id,
+            "filename": file.filename,
+            "size": total_size
+        }]}
 
     except Exception as e:
         return {"success": False, "error": f"Upload failed: {str(e)}"}
+
 
 
 
