@@ -173,7 +173,6 @@ import io
 
 @app.post("/api/upload-single")
 async def upload_single_file(file: UploadFile = File(...)):
-    """Upload et redimensionne les images pour traitement rapide"""
     try:
         if not file.filename:
             return {"success": False, "error": "No file provided"}
@@ -186,44 +185,40 @@ async def upload_single_file(file: UploadFile = File(...)):
         if ext not in allowed:
             return {"success": False, "error": "Unsupported file type"}
 
+        # ✅ Lire tout le fichier (mobile compatible)
+        content = await file.read()
+        total_size = len(content)
+
+        max_size = 11 * 1024 * 1024  # 10 MB limite
+
+        if total_size == 0:
+            return {"success": False, "error": "Empty file"}
+        if total_size > max_size:
+            return {"success": False, "error": "File too large (max 10MB)"}
+
         file_type = "image" if ext in image_extensions else "video"
         video_id = str(uuid.uuid4())
         upload_path = UPLOAD_DIR / f"{video_id}{ext}"
 
-        max_size = 11 * 1024 * 1024  # 10 MB limite
-        total_size = 0
-
-        # Lire le contenu
-        async with aiofiles.open(upload_path, 'wb') as f:
-            while chunk := await file.read(1024 * 1024):
-                await f.write(chunk)
-
-        total_size = len(content)
-
-        if total_size == 0:
-            return {"success": False, "error": "Empty file"}
-
-        if total_size > max_size:
-            return {"success": False, "error": "File too large (max 10MB)"}
-
-        # ✅ Redimensionnement si image
         if file_type == "image":
             image = Image.open(io.BytesIO(content))
 
-            # Taille max cible (tu peux ajuster)
-            max_dim = 1920  # largeur max 1920 px (≈ Full HD)
+            # ✅ Convertir HEIC / iPhone images → RGB automatiquement
+            if image.mode not in ("RGB", "RGBA"):
+                image = image.convert("RGB")
 
-            width, height = image.size
-            if max(width, height) > max_dim:
-                ratio = max_dim / float(max(width, height))
-                new_size = (int(width * ratio), int(height * ratio))
-                image = image.resize(new_size, Image.LANCZOS)
-                print(f"🔧 Image resized from {width}x{height} → {new_size}")
+            # ✅ Redimensionnement intelligent (garde qualité)
+            max_dim = 1920
+            w, h = image.size
+            if max(w, h) > max_dim:
+                scale = max_dim / float(max(w, h))
+                image = image.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
-            # Compression légère pour accélérer encore
-            image.save(upload_path, format="JPEG", quality=90)
+            # ✅ Sauvegarde compressée (optimisée mobile)
+            image.save(upload_path, format="JPEG", quality=92)
+
         else:
-            # Sauvegarde brute pour les vidéos
+            # ✅ Vidéo → sauvegarde brute
             async with aiofiles.open(upload_path, 'wb') as f:
                 await f.write(content)
 
@@ -235,11 +230,7 @@ async def upload_single_file(file: UploadFile = File(...)):
             "progress": 0,
             "message": f"{file_type.title()} uploaded successfully"
         }
-
         save_processing_status()
-
-        print(f"📤 Upload received: {file.filename}, size={len(content)} bytes, type={file.content_type}")
-
 
         return {
             "success": True,
@@ -253,6 +244,8 @@ async def upload_single_file(file: UploadFile = File(...)):
 
     except Exception as e:
         return {"success": False, "error": f"Upload failed: {str(e)}"}
+
+
 
 
 @app.get("/api/download-recent/{count}")
@@ -1040,6 +1033,36 @@ threading.Thread(target=auto_cleanup, daemon=True).start()
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "SkyAR Demo"}
+
+@app.get("/api/download-latest-results")
+async def download_latest_results():
+    """
+    Cherche tous les outputs terminés, récupère leurs result.jpg
+    puis crée un ZIP contenant uniquement ces images finales.
+    """
+
+    # Trouver tous les result.jpg existants dans outputs/*
+    result_images = list(Path("outputs").glob("*/result.jpg"))
+
+    if not result_images:
+        raise HTTPException(status_code=404, detail="No processed images found yet")
+
+    # Créer un ZIP temporaire
+    TEMP_ZIPS_DIR.mkdir(exist_ok=True)
+    zip_path = TEMP_ZIPS_DIR / f"sky_results_{int(time.time())}.zip"
+
+    import zipfile
+    with zipfile.ZipFile(zip_path, "w") as zipf:
+        for i, img_path in enumerate(result_images):
+            # Nom dans le zip → result_1.jpg, result_2.jpg...
+            zipf.write(img_path, arcname=f"result_{i+1}.jpg")
+
+    return FileResponse(
+        path=zip_path,
+        filename=zip_path.name,
+        media_type="application/zip"
+    )
+
 
 
 if __name__ == "__main__":

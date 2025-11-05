@@ -408,5 +408,3 @@ if __name__ == '__main__':
     args = utils.parse_config(config_path)
     sf = SkyFilter(args)
     sf.run()
-
-

@@ -859,7 +859,9 @@ async function uploadFiles(files) {
             // ✅ Affiche le bouton ZIP
             downloadAllSection.classList.remove('hidden');
             downloadAllBtn.onclick = () => {
-                window.location.href = baseUrl + `api/download-recent/${uploadedFiles.length}`;
+                //window.location.href = baseUrl + `api/download-recent/${uploadedFiles.length}`;
+                window.location.href = baseUrl + "api/download-latest-results";
+
 
             };
         }
