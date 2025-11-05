@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SkyAR Demo - Dynamic Sky Replacement for Videos & Photos</title>
+    <title>SkyAR Demo - Dynamic Sky Replacement for Photos</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .progress-bar {
@@ -57,7 +57,7 @@
                 <h1 class="text-3xl font-bold text-gray-900">
                     🌌 SkyAR Demo
                 </h1>
-                <p class="text-gray-600">Dynamic Sky Replacement for Videos & Photos</p>
+                <p class="text-gray-600">Dynamic Sky Replacement for Photos</p>
             </div>
         </div>
     </header>
@@ -68,9 +68,7 @@
         <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
             <h2 class="text-2xl font-semibold text-gray-900 mb-4">Welcome to SkyAR</h2>
             <p class="text-gray-700 mb-4">
-                Upload a video or photo and watch as our AI automatically replaces the sky with dramatic, 
-                cinematic backgrounds. From floating castles to alien spacecraft, create stunning 
-                visual effects in seconds! <strong>Videos & Photos: 10MB max each</strong>
+                Upload photo and watch as our AI automatically replaces the sky <strong>Photos: 10MB max each</strong>
             </p>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
                 <div class="flex items-center">
@@ -79,7 +77,7 @@
                 </div>
                 <div class="flex items-center">
                     <span class="text-green-500 mr-2">✓</span>
-                    Works with videos & photos
+                    Works with photos
                 </div>
                 <div class="flex items-center">
                     <span class="text-green-500 mr-2">✓</span>
@@ -90,7 +88,7 @@
 
         <!-- Upload Section -->
         <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
-            <h3 class="text-xl font-semibold text-gray-900 mb-4">1. Upload Your Video or Photo</h3>
+            <h3 class="text-xl font-semibold text-gray-900 mb-4">1. Upload Your Photo</h3>
             
             <div id="upload-area" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer">
                 <input type="file" id="video-input" accept="video/*,image/*" multiple class="hidden">
@@ -103,7 +101,6 @@
                         or drag and drop
                     </p>
                     <p class="text-xs text-gray-500">
-                        <strong>Videos:</strong> MP4, AVI, MOV up to 10MB<br>
                         <strong>Photos:</strong> JPG, PNG, WebP up to 10MB<br>
                         <strong>Batch:</strong> Up to 10 files at once (100MB total max)
                     </p>
